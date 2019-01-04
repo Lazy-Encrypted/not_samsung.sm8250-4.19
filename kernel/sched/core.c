@@ -6178,7 +6178,7 @@ sched_attr_copy_to_user(struct sched_attr __user *uattr,
 {
 	unsigned int ksize = sizeof(*kattr);
 
-	if (!access_ok(VERIFY_WRITE, uattr, usize))
+	if (!access_ok(uattr, usize))
 		return -EFAULT;
 
 	/*
