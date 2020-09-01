@@ -29,7 +29,7 @@ bool topology_scale_freq_invariant(void)
 	return cpufreq_supports_freq_invariance();
 }
 
-__weak bool arch_freq_counters_available(struct cpumask *cpus)
+__weak bool arch_freq_counters_available(const struct cpumask *cpus)
 {
 	return false;
 }
