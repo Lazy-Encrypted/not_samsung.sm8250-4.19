@@ -92,4 +92,9 @@ struct qmi_elem_info coex_antenna_switch_to_mdm_resp_msg_v01_ei[] = {
 				resp),
 		.ei_array      = qmi_response_type_v01_ei,
 	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type      = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
 };
