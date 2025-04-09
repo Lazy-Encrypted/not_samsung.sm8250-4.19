@@ -15,13 +15,13 @@
 
 // Samsung Wireless Authentication Message
 enum swam_data_type {
-	SWAM_TYPE_SHORT = 0,
-	SWAM_TYPE_LONG,
+	TYPE_SHORT = 0,
+	TYPE_LONG,
 };
 
 enum swam_direction_type {
-	SWAM_DIR_OUT = 0,
-	SWAM_DIR_IN,
+	DIR_OUT = 0,
+	DIR_IN,
 };
 
 struct swam_data {

@@ -81,10 +81,6 @@ extern unsigned int lpcharge;
 #include "stui_inf.h"
 #endif
 
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-#include "../../../../techpack/display/msm/samsung/ss_panel_notify.h"
-#endif
-
 #define ZINITIX_DEBUG					0
 #define PDIFF_DEBUG					1
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
@@ -788,9 +784,6 @@ struct zt_ts_info {
 #ifdef CONFIG_VBUS_NOTIFIER
 	struct notifier_block vbus_nb;
 #endif
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-	struct notifier_block panel_notif;
-#endif
 	u8 cover_type;
 	bool flip_enable;
 	bool spay_enable;
@@ -809,7 +802,6 @@ struct zt_ts_info {
 	u8 fod_info_vi_trx[3];
 	u16 fod_info_vi_data_len;
 	u16 fod_rect[4];
-	atomic_t fod_pressed;
 
 	u16 aod_rect[4];
 	u16 aod_active_area[3];
@@ -1432,13 +1424,10 @@ static void zt_set_lp_mode(struct zt_ts_info *info, int event, bool enable)
 
 	mutex_lock(&info->set_lpmode_lock);
 
-	if (enable) {
+	if (enable)
 		zinitix_bit_set(info->lpm_mode, event);
-		atomic_set(&info->fod_pressed, 0);
-	}
-	else {
+	else
 		zinitix_bit_clr(info->lpm_mode, event);
-    }
 
 	ret = ts_write_to_sponge(info, ZT_SPONGE_LP_FEATURE, &info->lpm_mode, 1);
 	if (ret < 0)
@@ -1610,23 +1599,13 @@ static ssize_t secure_touch_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%u", val);
 }
 
-static ssize_t zt_fod_pressed_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct zt_ts_info *info = dev_get_drvdata(dev);
-
-	return snprintf(buf, PAGE_SIZE, "%d", atomic_read(&info->fod_pressed));
-}
-
 static DEVICE_ATTR(secure_touch_enable, (S_IRUGO | S_IWUSR | S_IWGRP),
 		secure_touch_enable_show, secure_touch_enable_store);
 static DEVICE_ATTR(secure_touch, S_IRUGO, secure_touch_show, NULL);
-static DEVICE_ATTR(fod_pressed, S_IRUGO, zt_fod_pressed_show, NULL);
 
 static struct attribute *secure_attr[] = {
 	&dev_attr_secure_touch_enable.attr,
 	&dev_attr_secure_touch.attr,
-	&dev_attr_fod_pressed.attr,
 	NULL,
 };
 
@@ -1890,6 +1869,11 @@ static void zt_ts_fod_event_report(struct zt_ts_info *info, struct point_info to
 			| ((touch_info.byte04.value_u8bit & 0xF0) >> 4);
 		info->scrub_y = ((touch_info.byte03.value_u8bit << 4) & 0xFF0)
 			| ((touch_info.byte04.value_u8bit & 0x0F));
+
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+		input_sync(info->input_dev);
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+		input_sync(info->input_dev);
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 		input_info(true, &info->client->dev, "%s: FOD %s PRESS: %d\n", __func__,
 				touch_info.byte01.value_u8bit ? "NORMAL" : "LONG", info->scrub_id);
@@ -1898,8 +1882,6 @@ static void zt_ts_fod_event_report(struct zt_ts_info *info, struct point_info to
 				touch_info.byte01.value_u8bit ? "NORMAL" : "LONG",
 				info->scrub_id, info->scrub_x, info->scrub_y);
 #endif
-		atomic_set(&info->fod_pressed, 1);
-		sysfs_notify(&info->input_dev->dev.kobj, NULL, "fod_pressed");
 	} else if (touch_info.byte01.value_u8bit == 2) {
 		info->scrub_id = SPONGE_EVENT_TYPE_FOD_RELEASE;
 
@@ -1907,14 +1889,17 @@ static void zt_ts_fod_event_report(struct zt_ts_info *info, struct point_info to
 			| ((touch_info.byte04.value_u8bit & 0xF0) >> 4);
 		info->scrub_y = ((touch_info.byte03.value_u8bit << 4) & 0xFF0)
 			| ((touch_info.byte04.value_u8bit & 0x0F));
+
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+		input_sync(info->input_dev);
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+		input_sync(info->input_dev);
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 		input_info(true, &info->client->dev, "%s: FOD RELEASE: %d\n", __func__, info->scrub_id);
 #else
 		input_info(true, &info->client->dev, "%s: FOD RELEASE: %d, %d, %d\n",
 				__func__, info->scrub_id, info->scrub_x, info->scrub_y);
 #endif
-		atomic_set(&info->fod_pressed, 0);
-		sysfs_notify(&info->input_dev->dev.kobj, NULL, "fod_pressed");
 	} else if (touch_info.byte01.value_u8bit == 3) {
 		info->scrub_id = SPONGE_EVENT_TYPE_FOD_OUT;
 
@@ -1922,14 +1907,17 @@ static void zt_ts_fod_event_report(struct zt_ts_info *info, struct point_info to
 			| ((touch_info.byte04.value_u8bit & 0xF0) >> 4);
 		info->scrub_y = ((touch_info.byte03.value_u8bit << 4) & 0xFF0)
 			| ((touch_info.byte04.value_u8bit & 0x0F));
+
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 1);
+		input_sync(info->input_dev);
+		input_report_key(info->input_dev, KEY_BLACK_UI_GESTURE, 0);
+		input_sync(info->input_dev);
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 		input_info(true, &info->client->dev, "%s: FOD OUT: %d\n", __func__, info->scrub_id);
 #else
 		input_info(true, &info->client->dev, "%s: FOD OUT: %d, %d, %d\n",
 				__func__, info->scrub_id, info->scrub_x, info->scrub_y);
 #endif
-		atomic_set(&info->fod_pressed, 0);
-		sysfs_notify(&info->input_dev->dev.kobj, NULL, "fod_pressed");
 	}
 }
 
@@ -2379,38 +2367,6 @@ int tsp_vbus_notification(struct notifier_block *nb,
 #endif
 	zt_set_optional_mode(info, DEF_OPTIONAL_MODE_USB_DETECT_BIT, g_ta_connected);
 	return 0;
-}
-#endif
-
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-static int zt_panel_state_notify(struct notifier_block *nb,
-	unsigned long val, void *data)
-{
-    struct panel_state_data *evdata = (struct panel_state_data *)data;
-    struct zt_ts_info *info = container_of(nb, struct zt_ts_info, panel_notif);
-    unsigned int panel_state;
-
-    if (val != PANEL_EVENT_STATE_CHANGED)
-    	return 0;
-
-    if(evdata)
-    	panel_state = evdata->state;
-    else
-        return 0;
-
-    switch (panel_state) {
-    case PANEL_ON:
-        zt_set_lp_mode(info, ZT_SPONGE_MODE_PRESS, 0);
-        break;
-    case PANEL_OFF:
-    case PANEL_LPM:
-        zt_set_lp_mode(info, ZT_SPONGE_MODE_PRESS, 1);
-        break;
-    default:
-        break;
-    }
-
-	return NOTIFY_OK;
 }
 #endif
 
@@ -3620,17 +3576,12 @@ static irqreturn_t zt_touch_work(int irq, void *data)
 			if (read_data(info->client, ZT_PROXIMITY_DETECT, (u8 *)&prox_data, 2) < 0)
 				input_err(true, &client->dev, "%s: fail to read proximity detect reg\n", __func__);
 
-            if (info->lpm_mode == 1 || !info->finger_cnt1) {
-			// Report actual range when the area around the sensor is touched,
-			// when panel is in LPM state or when the screen isn't touched
-			    prox_data = prox_data == 5 || !prox_data;
-			    info->hover_event = prox_data;
+			info->hover_event = prox_data;
 
-			    input_info(true, &client->dev, "PROXIMITY DETECT. LVL = %d \n", prox_data);
-			    input_report_abs(info->input_dev_proximity, ABS_MT_CUSTOM, prox_data);
-			    input_sync(info->input_dev_proximity);
-			    break;
-			}
+			input_info(true, &client->dev, "PROXIMITY DETECT. LVL = %d \n", prox_data);
+			input_report_abs(info->input_dev_proximity, ABS_MT_CUSTOM, prox_data);
+			input_sync(info->input_dev_proximity);
+			break;
 		}
 	}
 
@@ -7877,11 +7828,8 @@ static void ear_detect_enable(void *device_data)
 		snprintf(buff, sizeof(buff), "%s", "NG");
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
 	} else {
-		if (info->lpm_mode == 1)
-			info->ed_enable = sec->cmd_param[0];
-		else
-			info->ed_enable = sec->cmd_param[0] != 0 ? 3 : 0;
-		
+		info->ed_enable = sec->cmd_param[0];
+
 		if (info->ed_enable == 3) {
 			zt_set_optional_mode(info, DEF_OPTIONAL_MODE_EAR_DETECT, true);
 			zt_set_optional_mode(info, DEF_OPTIONAL_MODE_EAR_DETECT_MUTUAL, false);
@@ -10172,11 +10120,6 @@ static int zt_ts_probe(struct i2c_client *client,
 #endif
 	device_init_wakeup(&client->dev, true);
 
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-	info->panel_notif.notifier_call = zt_panel_state_notify;
-	ss_panel_notifier_register(&info->panel_notif);
-#endif
-
 #ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	tui_tsp_info = info;
 #endif
@@ -10226,9 +10169,6 @@ err_input_proximity_register_device:
 		info->input_dev_pad = NULL;
 	}
 err_input_pad_register_device:
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-	ss_panel_notifier_unregister(&info->panel_notif);
-#endif
 	input_unregister_device(info->input_dev);
 	info->input_dev = NULL;
 err_input_register_device:
@@ -10319,9 +10259,6 @@ static int zt_ts_remove(struct i2c_client *client)
 		input_unregister_device(info->input_dev_proximity);
 	}
 
-#if defined(CONFIG_DISPLAY_SAMSUNG)
-	ss_panel_notifier_unregister(&info->panel_notif);
-#endif
 	input_unregister_device(info->input_dev);
 	input_free_device(info->input_dev);
 	mutex_unlock(&info->work_lock);
