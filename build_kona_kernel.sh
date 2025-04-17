@@ -299,6 +299,8 @@ FUNC_BUILD_BOOTIMG() {
     ./magiskboot-x86 cleanup
 
     rm "./queen_$MODEL.img"
+
+    cp "$KERNEL_DIR/$PRODUCT_OUT/dtbo.img" ./dtbo.img
 }
 
 
