@@ -18,6 +18,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/topology.h>
+#include <linux/units.h>
 #include <linux/qcom-cpufreq-hw.h>
 
 #define CREATE_TRACE_POINTS
@@ -72,8 +73,9 @@ struct cpufreq_qcom {
 	struct device_attribute freq_limit_attr;
 	int dcvsh_irq;
 	char dcvsh_irq_name[MAX_FN_SIZE];
-	bool is_irq_enabled;
 	bool is_irq_requested;
+	bool cancel_throttle;
+	unsigned long last_non_boost_freq;
 };
 
 struct cpufreq_counter {
@@ -122,72 +124,86 @@ static ssize_t dcvsh_freq_limit_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%lu\n", c->dcvsh_freq_limit);
 }
 
-static unsigned long limits_mitigation_notify(struct cpufreq_qcom *c,
-					bool limit)
+static void qcom_lmh_dcvs_notify(struct cpufreq_qcom *c)
 {
-	struct cpufreq_policy *policy;
-	u32 cpu;
-	unsigned long freq;
-	unsigned long max_capacity, capacity;
+	int cpu = cpumask_first(&c->related_cpus);
+	struct cpufreq_policy *policy = cpufreq_cpu_get_raw(cpu);
+	struct device *dev = get_cpu_device(cpu);
+	unsigned long freq_hz, requested_freq, throttled_freq, thermal_pressure;
+	struct dev_pm_opp *opp;
 
-	cpu = cpumask_first(&c->related_cpus);
-	policy = cpufreq_cpu_get_raw(cpu);
-	capacity = max_capacity = arch_scale_cpu_capacity(cpu);
+	if (!dev || !policy)
+		return;
 
-	if (limit) {
-		freq = readl_relaxed(c->base + offsets[REG_DOMAIN_STATE]) &
-				GENMASK(7, 0);
-		freq = DIV_ROUND_CLOSEST_ULL(freq * xo_rate, 1000);
-		if (policy) {
-			capacity = freq * max_capacity;
-			capacity /= policy->cpuinfo.max_freq;
-		}
+	/*
+	 * Get the h/w throttled frequency, normalize it using the registered
+	 * OPP table and use it to calculate thermal pressure. Normalization
+	 * avoids acting on a raw HW frequency that falls between two OPP
+	 * entries, which would produce an inaccurate pressure value.
+	 */
+	freq_hz = (readl_relaxed(c->base + offsets[REG_DOMAIN_STATE]) & 0xff)
+			* xo_rate;
+
+	opp = dev_pm_opp_find_freq_floor(dev, &freq_hz);
+	if (IS_ERR(opp) && PTR_ERR(opp) == -ERANGE)
+		opp = dev_pm_opp_find_freq_ceil(dev, &freq_hz);
+
+	if (IS_ERR(opp))
+		dev_warn(dev, "Can't find the OPP for throttling: %pe!\n", opp);
+	else
+		dev_pm_opp_put(opp);
+
+	throttled_freq = thermal_pressure = freq_hz / HZ_PER_KHZ;
+	requested_freq = qcom_cpufreq_hw_get(cpu);
+
+	/*
+	 * In the unlikely case the policy is unregistered, do not enable
+	 * polling or the h/w interrupt.
+	 */
+	mutex_lock(&c->dcvsh_lock);
+	if (c->cancel_throttle)
+		goto out;
+
+	/*
+	 * If the h/w throttled frequency is at or above what cpufreq has
+	 * requested, throttle has cleared. Stop polling and switch back to
+	 * the interrupt mechanism. Pin thermal_pressure to max_freq so that
+	 * arch_update_thermal_pressure removes any residual pressure.
+	 */
+	if (throttled_freq >= requested_freq) {
+		thermal_pressure = policy->cpuinfo.max_freq;
+		enable_irq(c->dcvsh_irq);
+		trace_dcvsh_throttle(cpu, 0);
 	} else {
-		if (!policy)
-			freq = U32_MAX;
-		else
-			freq = policy->cpuinfo.max_freq;
+		/*
+		 * If the frequency is still at or above the highest non-boost
+		 * frequency, the shortfall is likely due to core-count boost
+		 * limitations rather than thermal. Don't penalise the scheduler
+		 * for that either.
+		 */
+		if (throttled_freq >= c->last_non_boost_freq)
+			thermal_pressure = policy->cpuinfo.max_freq;
+
+		mod_delayed_work(system_highpri_wq, &c->freq_poll_work,
+				 msecs_to_jiffies(LIMITS_POLLING_DELAY_MS));
 	}
 
-	arch_set_thermal_pressure(&c->related_cpus, max_t(unsigned long, 0,
-				  max_capacity - capacity));
-	trace_dcvsh_freq(cpumask_first(&c->related_cpus), freq);
-	c->dcvsh_freq_limit = freq;
+	trace_dcvsh_freq(cpu, requested_freq, throttled_freq, thermal_pressure);
 
-	return freq;
+	/* Update thermal pressure (boost frequencies are accepted). */
+	arch_update_thermal_pressure(&c->related_cpus, thermal_pressure);
+	c->dcvsh_freq_limit = thermal_pressure;
+
+out:
+	mutex_unlock(&c->dcvsh_lock);
 }
 
 static void limits_dcvsh_poll(struct work_struct *work)
 {
 	struct cpufreq_qcom *c = container_of(work, struct cpufreq_qcom,
-						freq_poll_work.work);
-	unsigned long freq_limit, dcvsh_freq;
-	u32 regval, cpu;
+					      freq_poll_work.work);
 
-	mutex_lock(&c->dcvsh_lock);
-
-	cpu = cpumask_first(&c->related_cpus);
-
-	freq_limit = limits_mitigation_notify(c, true);
-
-	dcvsh_freq = qcom_cpufreq_hw_get(cpu);
-
-	if (freq_limit != dcvsh_freq) {
-		mod_delayed_work(system_highpri_wq, &c->freq_poll_work,
-				msecs_to_jiffies(LIMITS_POLLING_DELAY_MS));
-	} else {
-		/* Update scheduler for throttle removal */
-		limits_mitigation_notify(c, false);
-
-		regval = readl_relaxed(c->base + offsets[REG_INTR_CLR]);
-		regval |= GT_IRQ_STATUS;
-		writel_relaxed(regval, c->base + offsets[REG_INTR_CLR]);
-
-		c->is_irq_enabled = true;
-		enable_irq(c->dcvsh_irq);
-	}
-
-	mutex_unlock(&c->dcvsh_lock);
+	qcom_lmh_dcvs_notify(c);
 }
 
 static irqreturn_t dcvsh_handle_isr(int irq, void *data)
@@ -199,18 +215,15 @@ static irqreturn_t dcvsh_handle_isr(int irq, void *data)
 	if (!(regval & GT_IRQ_STATUS))
 		return IRQ_HANDLED;
 
-	mutex_lock(&c->dcvsh_lock);
+	/* Disable interrupt and enable polling */
+	disable_irq_nosync(c->dcvsh_irq);
 
-	if (c->is_irq_enabled) {
-		c->is_irq_enabled = false;
-		disable_irq_nosync(c->dcvsh_irq);
-		limits_mitigation_notify(c, true);
-		mod_delayed_work(system_highpri_wq, &c->freq_poll_work,
-				msecs_to_jiffies(LIMITS_POLLING_DELAY_MS));
+	regval = readl_relaxed(c->base + offsets[REG_INTR_CLR]);
+	regval |= GT_IRQ_STATUS;
+	writel_relaxed(regval, c->base + offsets[REG_INTR_CLR]);
 
-	}
-
-	mutex_unlock(&c->dcvsh_lock);
+	trace_dcvsh_throttle(cpumask_first(&c->related_cpus), 1);
+	mod_delayed_work(system_highpri_wq, &c->freq_poll_work, 0);
 
 	return IRQ_HANDLED;
 }
@@ -360,7 +373,6 @@ static int qcom_cpufreq_hw_cpu_init(struct cpufreq_policy *policy)
 
 		c->is_irq_requested = true;
 		writel_relaxed(0x0, c->base + offsets[REG_INTR_CLR]);
-		c->is_irq_enabled = true;
 
 		sysfs_attr_init(&c->freq_limit_attr.attr);
 		c->freq_limit_attr.attr.name = "dcvsh_freq_limit";
@@ -478,7 +490,8 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 				    int domain_index)
 {
 	struct device *dev = &pdev->dev, *cpu_dev;
-	u32 data, src, lval, i, core_count, prev_cc, prev_freq, freq, volt;
+	u32 data, src, lval, i, j, core_count, prev_cc, prev_freq, freq, volt;
+	u32 max_cc = 0;
 	unsigned long cpu;
 	int ret, of_len;
 	u32 *of_table = NULL;
@@ -522,6 +535,19 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 		if (of_device_is_compatible(dev->of_node, "qcom,cpufreq-hw-epss"))
 			core_count = FIELD_GET(GENMASK(19, 16), data);
 
+		/*
+		 * Take the first LUT row's core_count as the non-boost
+		 * baseline and treat any row below it as CPUFREQ_BOOST_FREQ.
+		 * This is required on SoCs such as SM7325 where the
+		 * qcom,freq-domain DT cell uses a single fixed value (4)
+		 * for every cluster even though the big and the prime
+		 * cluster have 3 and 1 core respectively, which previously
+		 * caused every LUT row in those two clusters to be flagged
+		 * boost.
+		 */
+		if (i == 0)
+			max_cc = core_count;
+
 		data = readl_relaxed(c->base + offsets[REG_VOLT_LUT] +
 				      i * lut_row_size);
 		volt = FIELD_GET(LUT_VOLT, data) * 1000;
@@ -538,7 +564,7 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 		if (!of_find_freq(of_table, of_len, c->table[i].frequency)) {
 			c->table[i].frequency = CPUFREQ_ENTRY_INVALID;
 		} else {
-			if (core_count != max_cores)
+			if (core_count != max_cc)
 				c->table[i].flags = CPUFREQ_BOOST_FREQ;
 
 			/*
@@ -557,6 +583,14 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 	}
 
 	c->table[i].frequency = CPUFREQ_TABLE_END;
+
+	/* Record the highest non-boost frequency for thermal pressure gating. */
+	for (j = 0; j < lut_max_entries && c->table[j].frequency != CPUFREQ_TABLE_END; j++) {
+		if (c->table[j].flags == CPUFREQ_BOOST_FREQ)
+			break;
+		c->last_non_boost_freq = c->table[j].frequency;
+	}
+
 	for_each_cpu(cpu, &c->related_cpus) {
 		per_cpu(cpufreq_boost_pcpu, cpu).c = c;
 		per_cpu(cpufreq_boost_pcpu, cpu).max_index = i - 1;
