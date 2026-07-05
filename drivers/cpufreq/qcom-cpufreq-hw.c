@@ -537,7 +537,7 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 	u32 data, src, lval, i, core_count, prev_cc, prev_freq, cur_freq, volt;
 	u32 vc;
 	unsigned long cpu;
-	int ret, of_len, max_index;
+	int ret, of_len = 0, max_index = 0;
 	u32 *of_table = NULL;
 	char tbl_name[] = "qcom,cpufreq-table-##";
 	bool invalidate_freq;
@@ -644,11 +644,62 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 		}
 	}
 
+	if (of_table && of_len > 0) {
+		int hw_max_freq = 0;
+		int last_valid_idx = -1;
+		u32 last_volt = 0;
+
+		for (int j = 0; j < (int)i; j++) {
+			if (c->table[j].frequency != CPUFREQ_ENTRY_INVALID) {
+				hw_max_freq = max(hw_max_freq, (int)c->table[j].frequency);
+				last_valid_idx = j;
+			}
+		}
+
+		if (last_valid_idx >= 0) {
+			u32 data_volt = readl_relaxed(base_volt + last_valid_idx * lut_row_size);
+			last_volt = (data_volt & GENMASK(11, 0)) * 1000;
+		}
+
+		for (int j = 0; j < of_len && i < lut_max_entries; j++) {
+			if ((int)of_table[j] > hw_max_freq) {
+				bool invalid_freq = false;
+				for (int k = 0; k < (int)i; k++) {
+					if (c->table[k].frequency == of_table[j]) {
+						invalid_freq = true;
+						break;
+					}
+				}
+				if (!invalid_freq) {
+					u32 lval = of_table[j] / 19200;
+					u32 prev_freq_data = readl_relaxed(base_freq + last_valid_idx * lut_row_size);
+					u32 prev_volt_data = readl_relaxed(base_volt + last_valid_idx * lut_row_size);
+					u32 new_freq_data = (prev_freq_data & ~GENMASK(7, 0)) | lval;
+					
+					writel_relaxed(new_freq_data, base_freq + i * lut_row_size);
+					writel_relaxed(prev_volt_data, base_volt + i * lut_row_size);
+
+					c->table[i].frequency = of_table[j];
+
+					for_each_cpu(cpu, &c->related_cpus) {
+						cpu_dev = get_cpu_device(cpu);
+						if (!cpu_dev)
+							continue;
+						dev_pm_opp_add(cpu_dev, c->table[i].frequency * 1000,
+								   last_volt ? last_volt : 0);
+					}
+					max_index = i;
+					i++;
+				}
+			}
+		}
+	}
+
 	c->lut_max_entries = i;
 	c->table[i].frequency = CPUFREQ_TABLE_END;
 	for_each_cpu(cpu, &c->related_cpus) {
 		per_cpu(cpufreq_boost_pcpu, cpu).c = c;
-		per_cpu(cpufreq_boost_pcpu, cpu).max_index = max_index - 1;
+		per_cpu(cpufreq_boost_pcpu, cpu).max_index = max_index;
 	}
 
 	if (of_table)
