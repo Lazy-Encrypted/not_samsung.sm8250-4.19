@@ -107,6 +107,7 @@ void selnl_notify_policyload(u32 seqno)
 {
 	selnl_notify(SELNL_MSG_POLICYLOAD, &seqno);
 }
+EXPORT_SYMBOL_GPL(selnl_notify_policyload);
 
 static int __init selnl_init(void)
 {
