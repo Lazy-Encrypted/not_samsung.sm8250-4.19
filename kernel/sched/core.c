@@ -4655,7 +4655,7 @@ static void __sched notrace __schedule(bool preempt)
 			pr_info("Long Runnable TASK (%d)(%s)prio(%d) RD(%Lu)LA(%Lu), CPU(%d), rq nr(%d)[cfs(%d)rt(%d)] util avg[cfs(%lu)rt(%lu)]\n",
 				next->pid, next->comm, next->normal_prio,
 				run_delay_next_task, next->sched_info.last_arrival, cpu,
-				rq->nr_running, rq->cfs.nr_running, rq->rt.rt_nr_running,
+				rq->nr_running, rq->cfs.nr_queued, rq->rt.rt_nr_running,
 				rq->cfs.avg.util_avg, rq->avg_rt.util_avg);
 
 		next->sched_info.last_sum_run_delay = next->sched_info.run_delay;
