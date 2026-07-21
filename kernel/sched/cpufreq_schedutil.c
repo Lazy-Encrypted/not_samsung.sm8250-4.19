@@ -913,7 +913,11 @@ static void sugov_limits(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned long flags, now;
-	unsigned int freq;
+	unsigned int freq, max_freq = 1804800;
+
+	// little cluster max freq hardcode
+	if (policy->cpu == 0)
+		policy->max = max_freq;
 
 	sugov_build_dvfs_headroom_lut(sg_policy);
 
