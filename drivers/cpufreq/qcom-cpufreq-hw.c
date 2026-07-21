@@ -517,36 +517,39 @@ static bool of_find_freq(u32 *of_table, int of_len, long frequency)
 }
 
 static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
-				    struct cpufreq_qcom *c, u32 max_cores,
-				    int domain_index)
+					    struct cpufreq_qcom *c, u32 max_cores,
+					    int domain_index)
 {
 	struct device *dev = &pdev->dev, *cpu_dev;
 	u32 data, src, lval, i, j, core_count, prev_cc, prev_freq, freq, volt;
 	u32 max_cc = 0;
+	void __iomem *base_freq = c->base + offsets[REG_FREQ_LUT];
+	void __iomem *base_volt = c->base + offsets[REG_VOLT_LUT];
 	unsigned long cpu;
-	int ret, of_len;
+	int ret, of_len = 0, max_index = 0;
 	u32 *of_table = NULL;
 	char tbl_name[] = "qcom,cpufreq-table-##";
+bool invalidate_freq;
 
 	c->table = devm_kcalloc(dev, lut_max_entries + 1,
-				sizeof(*c->table), GFP_KERNEL);
+					sizeof(*c->table), GFP_KERNEL);
 	if (!c->table)
 		return -ENOMEM;
 
 	snprintf(tbl_name, sizeof(tbl_name), "qcom,cpufreq-table-%d",
-		 domain_index);
+			 domain_index);
 	if (of_find_property(dev->of_node, tbl_name, &of_len) && of_len > 0) {
 		of_len /= sizeof(*of_table);
 
 		of_table = devm_kcalloc(dev, of_len, sizeof(*of_table),
-					GFP_KERNEL);
+						GFP_KERNEL);
 		if (!of_table) {
 			ret = -ENOMEM;
 			goto err_cpufreq_table;
 		}
 
 		ret = of_property_read_u32_array(dev->of_node, tbl_name,
-						 of_table, of_len);
+							 of_table, of_len);
 		if (ret)
 			goto err_of_table;
 	}
@@ -558,7 +561,7 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 
 	for (i = 0; i < lut_max_entries; i++) {
 		data = readl_relaxed(c->base + offsets[REG_FREQ_LUT] +
-				      i * lut_row_size);
+					      i * lut_row_size);
 		src = FIELD_GET(LUT_SRC, data);
 		lval = FIELD_GET(LUT_L_VAL, data);
 		core_count = FIELD_GET(LUT_CORE_COUNT, data);
@@ -580,8 +583,10 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 			max_cc = core_count;
 
 		data = readl_relaxed(c->base + offsets[REG_VOLT_LUT] +
-				      i * lut_row_size);
+					      i * lut_row_size);
 		volt = FIELD_GET(LUT_VOLT, data) * 1000;
+
+		
 
 		if (src)
 			freq = xo_rate * lval / 1000;
@@ -590,10 +595,13 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 
 		c->table[i].frequency = freq;
 		dev_dbg(dev, "index=%d freq=%d, core_count %d\n",
-				i, c->table[i].frequency, core_count);
+					i, c->table[i].frequency, core_count);
 
-		if (!of_find_freq(of_table, of_len, c->table[i].frequency)) {
+		invalidate_freq = !of_find_freq(of_table, of_len, c->table[i].frequency);
+
+		if (invalidate_freq) {
 			c->table[i].frequency = CPUFREQ_ENTRY_INVALID;
+			max_index = i;
 		} else {
 			if (core_count != max_cc)
 				c->table[i].flags = CPUFREQ_BOOST_FREQ;
@@ -613,7 +621,60 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 			dev_pm_opp_add(cpu_dev, freq * 1000, volt);
 	}
 
-	c->table[i].frequency = CPUFREQ_TABLE_END;
+
+
+if (of_table && of_len > 0) {
+		int hw_max_freq = 0;
+		int last_valid_idx = -1;
+		u32 last_volt = 0;
+
+		for (int j = 0; j < (int)i; j++) {
+			if (c->table[j].frequency != CPUFREQ_ENTRY_INVALID) {
+				hw_max_freq = max(hw_max_freq, (int)c->table[j].frequency);
+				last_valid_idx = j;
+			}
+		}
+
+		if (last_valid_idx >= 0) {
+			u32 data_volt = readl_relaxed(base_volt + last_valid_idx * lut_row_size);
+			last_volt = (data_volt & GENMASK(11, 0)) * 1000;
+		}
+
+		for (int j = 0; j < of_len && i < lut_max_entries; j++) {
+			if ((int)of_table[j] > hw_max_freq) {
+				bool invalid_freq = false;
+				for (int k = 0; k < (int)i; k++) {
+					if (c->table[k].frequency == of_table[j]) {
+						invalid_freq = true;
+						break;
+					}
+				}
+				if (!invalid_freq) {
+					u32 lval = of_table[j] / 19200; /* Assuming 19.2MHz XO_RATE */
+					u32 prev_freq_data = readl_relaxed(base_freq + last_valid_idx * lut_row_size);
+					u32 prev_volt_data = readl_relaxed(base_volt + last_valid_idx * lut_row_size);
+					u32 new_freq_data = (prev_freq_data & ~GENMASK(7, 0)) | lval;
+
+					writel_relaxed(new_freq_data, base_freq + i * lut_row_size);
+					writel_relaxed(prev_volt_data, base_volt + i * lut_row_size);
+
+					c->table[i].frequency = of_table[j];
+
+					for_each_cpu(cpu, &c->related_cpus) {
+						cpu_dev = get_cpu_device(cpu);
+						if (!cpu_dev)
+							continue;
+						dev_pm_opp_add(cpu_dev, c->table[i].frequency * 1000,
+											last_volt ? last_volt : 0);
+					}
+					max_index = i;
+					i++;
+				}
+			}
+		}
+	}
+	
+c->table[i].frequency = CPUFREQ_TABLE_END;
 
 	/* Record the highest non-boost frequency for thermal pressure gating. */
 	for (j = 0; j < lut_max_entries && c->table[j].frequency != CPUFREQ_TABLE_END; j++) {
@@ -624,7 +685,7 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 
 	for_each_cpu(cpu, &c->related_cpus) {
 		per_cpu(cpufreq_boost_pcpu, cpu).c = c;
-		per_cpu(cpufreq_boost_pcpu, cpu).max_index = i - 1;
+		per_cpu(cpufreq_boost_pcpu, cpu).max_index = max_index;
 	}
 
 	if (cpu_dev)
