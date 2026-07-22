@@ -146,6 +146,7 @@ struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
 						 const struct path *path)
 {
 	struct fanotify_event_info *event = NULL;
+	struct mem_cgroup *old_memcg;
 	gfp_t gfp = GFP_KERNEL_ACCOUNT;
 
 	/*
