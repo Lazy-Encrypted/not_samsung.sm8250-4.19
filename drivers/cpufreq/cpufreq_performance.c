@@ -18,6 +18,11 @@
 
 static void cpufreq_gov_performance_limits(struct cpufreq_policy *policy)
 {
+	unsigned int max_freq = 1804800;
+
+	if (policy->cpu == 0)
+		policy->max = max_freq;
+
 	pr_debug("setting to %u kHz\n", policy->max);
 	__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
 }
