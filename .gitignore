@@ -143,3 +143,9 @@ Android.bp
 # Ignore build environment
 build_env/
 out/
+
+# generated build files
+
+AnyKernel3/
+tc/
+*.zip
