@@ -152,20 +152,14 @@ echo -e "${GREEN}DTB + DTBO ready!${NC}"
 
 
 # AK3
-rm -rf AnyKernel3
-echo "[*] Cloning AnyKernel3..."
-git clone -q -b "$AK3_BRANCH" "$AK3_REPO" AnyKernel3 || exit 1
+rm -rf AA
+mkdir AA
 
-cp "$BOOT_DIR/dtbo.img" AnyKernel3/
-cp "$BOOT_DIR/Image.gz" AnyKernel3/
-cp "$BOOT_DIR/dtb" AnyKernel3/
+cp "$BOOT_DIR/dtbo.img" AA/
+cp "$BOOT_DIR/Image.gz" AA/
+cp "$BOOT_DIR/dtb" AA/
 
 # remove older builds
 rm -rf *.zip
 
-cd AnyKernel3
-zip -r9 "../$ZIPNAME" * -x .git README.md *placeholder
-cd ..
-
 echo -e "\n${GREEN}Completed in $((SECONDS / 60))m $((SECONDS % 60))s${NC}"
-echo -e "${GREEN}Zip: $ZIPNAME${NC}"
