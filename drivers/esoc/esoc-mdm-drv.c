@@ -389,7 +389,7 @@ static int mdm_handle_boot_fail(struct esoc_clink *esoc_clink, u8 *pon_trial)
 	if (*pon_trial == atomic_read(&mdm_drv->n_pon_tries)) {
 		esoc_mdm_log("Reached max. number of boot trials\n");
 		atomic_set(&mdm_drv->boot_fail_action,
-					BOOT_FAIL_ACTION_PANIC);
+					BOOT_FAIL_ACTION_NOP);
 	}
 
 	switch (atomic_read(&mdm_drv->boot_fail_action)) {
@@ -419,13 +419,13 @@ static int mdm_handle_boot_fail(struct esoc_clink *esoc_clink, u8 *pon_trial)
 		msleep(S3_RESET_DELAY_MS);
 		break;
 	case BOOT_FAIL_ACTION_PANIC:
-		esoc_mdm_log("Calling panic!!\n");
-		panic("Panic requested on unrecoverable external_modem boot failure\n");
-		break;
+		esoc_mdm_log("Leaving the modem in its current state\n");
+		*pon_trial = atomic_read(&mdm_drv->n_pon_tries) + 1;
+		return 0;
 	case BOOT_FAIL_ACTION_NOP:
-		esoc_mdm_log("Leaving the modem in its curent state\n");
-		mdm_drv->mode = PWR_OFF;
-		return -EIO;
+		esoc_mdm_log("Leaving the modem in its current state\n");
+		*pon_trial = atomic_read(&mdm_drv->n_pon_tries) + 1;
+		return 0;
 	case BOOT_FAIL_ACTION_SHUTDOWN:
 	default:
 		mdm_subsys_retry_powerup_cleanup(esoc_clink,
@@ -508,9 +508,11 @@ static int mdm_subsys_powerup(const struct subsys_desc *crashed_subsys)
 		"Modem turned-on. Waiting for pon_done notification..\n");
 		ret = wait_for_completion_timeout(&mdm_drv->pon_done, timeout);
 		if (mdm_drv->pon_state == PON_FAIL || ret <= 0) {
-			dev_err(&esoc_clink->dev, "booting failed\n");
-			esoc_mdm_log("booting failed\n");
 			ret = mdm_handle_boot_fail(esoc_clink, &pon_trial);
+			
+			if (atomic_read(&mdm_drv->boot_fail_action) == BOOT_FAIL_ACTION_NOP)
+				break;
+
 			if (ret)
 				return ret;
 		} else if (mdm_drv->pon_state == PON_RETRY) {
