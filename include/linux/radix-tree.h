@@ -53,6 +53,8 @@
 #define RADIX_TREE_ENTRY_MASK		3UL
 #define RADIX_TREE_INTERNAL_NODE	2UL
 
+#define RADIX_TREE_INDIRECT_PTR		1
+
 static inline bool radix_tree_is_internal_node(void *ptr)
 {
 	return ((unsigned long)ptr & RADIX_TREE_ENTRY_MASK) ==
@@ -262,6 +264,10 @@ void radix_tree_clear_tags(struct radix_tree_root *, struct radix_tree_node *,
 			   void __rcu **slot);
 unsigned int radix_tree_gang_lookup(const struct radix_tree_root *,
 			void **results, unsigned long first_index,
+			unsigned int max_items);
+unsigned int
+radix_tree_gang_lookup_index(struct radix_tree_root *root, void **results,
+			unsigned long *indices, unsigned long first_index,
 			unsigned int max_items);
 unsigned int radix_tree_gang_lookup_slot(const struct radix_tree_root *,
 			void __rcu ***results, unsigned long *indices,

@@ -42,6 +42,11 @@
 #include "sde_power_handle.h"
 #include "sde_core_perf.h"
 #include "sde_trace.h"
+#include "dsi_display.h"
+
+#if defined(CONFIG_DISPLAY_SAMSUNG) // case 04436106
+#include "ss_dsi_panel_debug.h"
+#endif
 
 #define SDE_PSTATES_MAX (SDE_STAGE_MAX * 4)
 #define SDE_MULTIRECT_PLANE_MAX (SDE_STAGE_MAX * 2)
@@ -400,7 +405,7 @@ static ssize_t measured_fps_show(struct device *device,
 	fps_int = (uint64_t) sde_crtc->fps_info.measured_fps;
 	fps_decimal = do_div(fps_int, 10);
 	return scnprintf(buf, PAGE_SIZE,
-	"fps: %d.%d duration:%d frame_count:%lld\n", fps_int, fps_decimal,
+	"fps: %lld.%lld duration:%d frame_count:%lld\n", fps_int, fps_decimal,
 			sde_crtc->fps_info.fps_periodic_duration, frame_count);
 }
 
@@ -2391,7 +2396,11 @@ static void sde_crtc_vblank_cb(void *data)
 
 	drm_crtc_handle_vblank(crtc);
 	DRM_DEBUG_VBL("crtc%d\n", crtc->base.id);
+#if defined(CONFIG_DISPLAY_SAMSUNG) // case 04436106
+	SDE_EVT32(DRMID(crtc));
+#else
 	SDE_EVT32_VERBOSE(DRMID(crtc));
+#endif
 }
 
 static void _sde_crtc_retire_event(struct drm_connector *connector,
@@ -2525,6 +2534,12 @@ static void _sde_crtc_set_input_fence_timeout(struct sde_crtc_state *cstate)
 	cstate->input_fence_timeout_ns =
 		sde_crtc_get_property(cstate, CRTC_PROP_INPUT_FENCE_TIMEOUT);
 	cstate->input_fence_timeout_ns *= NSEC_PER_MSEC;
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	/* Increase fence timeout value to 20 sec (case 03381402 / P180412-02009) */
+	cstate->input_fence_timeout_ns *= 2;
+	SDE_DEBUG("input_fence_timeout_ns %llu \n", cstate->input_fence_timeout_ns);
+#endif
 }
 
 void _sde_crtc_clear_dim_layers_v1(struct drm_crtc_state *state)
@@ -2997,6 +3012,11 @@ err:
 	return ret;
 }
 
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+bool flag_screenrecorder;
+extern bool flag_boost_mdpclk_screenrecorder;
+#endif
+
 /**
  * _sde_crtc_wait_for_fences - wait for incoming framebuffer sync fences
  * @crtc: Pointer to CRTC object
@@ -3029,6 +3049,10 @@ static void _sde_crtc_wait_for_fences(struct drm_crtc *crtc)
 	 * if its fence has timed out. Call input fence wait multiple times if
 	 * fence wait is interrupted due to interrupt call.
 	 */
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	flag_screenrecorder = false;
+#endif
+
 	SDE_ATRACE_BEGIN("plane_wait_input_fence");
 	drm_atomic_crtc_for_each_plane(plane, crtc) {
 		do {
@@ -3042,6 +3066,18 @@ static void _sde_crtc_wait_for_fences(struct drm_crtc *crtc)
 		} while (wait_ms && rc == -ERESTARTSYS);
 	}
 	SDE_ATRACE_END("plane_wait_input_fence");
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	if (flag_screenrecorder && !flag_boost_mdpclk_screenrecorder) {
+		SDE_INFO("screenrecorder: boost up sde core clk\n");
+		flag_boost_mdpclk_screenrecorder = true;
+		ss_set_max_sde_core_clk(crtc->dev);
+	} else if (!flag_screenrecorder && flag_boost_mdpclk_screenrecorder) {
+		SDE_INFO("screenrecorder: restore normal sde core clk\n");
+		flag_boost_mdpclk_screenrecorder = false;
+		ss_set_normal_sde_core_clk(crtc->dev);
+	}
+#endif
 }
 
 static void _sde_crtc_setup_mixer_for_encoder(
@@ -3510,6 +3546,75 @@ static void _sde_crtc_remove_pipe_flush(struct drm_crtc *crtc)
 	}
 }
 
+void sde_crtc_reset_hw_immediate(struct drm_crtc *crtc, u32 xin_mask)
+{
+	struct sde_crtc *sde_crtc;
+	struct sde_kms *sde_kms;
+	struct sde_hw_ctl *ctl;
+	int rc, i;
+
+	if (!crtc || !crtc->dev)
+		return;
+
+	sde_kms = _sde_crtc_get_kms(crtc);
+	if (!sde_kms) {
+		SDE_ERROR("invalid sde_kms\n");
+		return;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+	SDE_EVT32(DRMID(crtc), xin_mask, SDE_EVTLOG_FUNC_ENTRY);
+	SDE_ERROR("crtc%d: xin:%d, starting hard reset\n", DRMID(crtc), xin_mask);
+
+	/* optionally generate a panic instead of performing a h/w reset */
+	SDE_DBG_CTRL("stop_ftrace", "reset_hw_panic");
+
+	for (i = 0; i < sde_crtc->num_ctls; ++i) {
+		ctl = sde_crtc->mixers[i].hw_ctl;
+		if (!ctl || !ctl->ops.reset)
+			continue;
+
+		rc = ctl->ops.reset(ctl);
+		if (rc) {
+			SDE_ERROR("crtc%d: ctl%d reset failure\n",
+					crtc->base.id, ctl->idx - CTL_0);
+			SDE_EVT32(DRMID(crtc), ctl->idx - CTL_0,
+					SDE_EVTLOG_ERROR);
+			break;
+		}
+	}
+
+	/* Early out if simple ctl reset succeeded */
+	if (i == sde_crtc->num_ctls)
+		return;
+
+	SDE_ERROR("crtc%d: issuing hard reset\n", DRMID(crtc));
+
+	/* force all components in the system into reset at the same time */
+	for (i = 0; i < sde_crtc->num_ctls; ++i) {
+		ctl = sde_crtc->mixers[i].hw_ctl;
+		if (!ctl || !ctl->ops.hard_reset)
+			continue;
+
+		SDE_EVT32(DRMID(crtc), ctl->idx - CTL_0);
+		ctl->ops.hard_reset(ctl, true);
+	}
+
+	sde_vbif_halt_xin_mask(sde_kms, xin_mask, true);
+	udelay(1000);
+	sde_vbif_halt_xin_mask(sde_kms, xin_mask, false);
+
+	for (i = 0; i < sde_crtc->num_ctls; ++i) {
+		ctl = sde_crtc->mixers[i].hw_ctl;
+		if (!ctl || !ctl->ops.hard_reset)
+			continue;
+
+		ctl->ops.hard_reset(ctl, false);
+	}
+
+	return;
+}
+
 /**
  * sde_crtc_reset_hw - attempt hardware reset on errors
  * @crtc: Pointer to DRM crtc instance
@@ -3618,6 +3723,44 @@ int sde_crtc_reset_hw(struct drm_crtc *crtc, struct drm_crtc_state *old_state,
 	return !recovery_events ? 0 : -EAGAIN;
 }
 
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+#include "dsi_drm.h"
+#include "dsi_panel.h"
+#include "ss_dsi_panel_common.h"
+
+void ss_dfps_control(struct drm_crtc *crtc)
+{
+	struct drm_device *dev = crtc->dev;
+	struct drm_encoder *encoder = NULL;
+	struct dsi_bridge *c_bridge = NULL;
+	struct dsi_display *display = NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+
+	list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
+		if (encoder->crtc != crtc)
+			continue;
+
+		if (encoder->encoder_type == DRM_MODE_ENCODER_DSI) {
+			c_bridge = container_of(encoder->bridge, struct dsi_bridge, base);
+
+			if (c_bridge && (c_bridge->dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) {
+				display = c_bridge->display;
+
+				if (display && display->panel && display->panel->dfps_caps.type == DSI_DFPS_IMMEDIATE_VFP) {
+					vdd = (struct samsung_display_driver_data *)display->panel->panel_private;
+					if (vdd->panel_func.samsung_dfps_panel_update)
+						vdd->panel_func.samsung_dfps_panel_update(vdd, c_bridge->dsi_mode.timing.refresh_rate);
+					SDE_DEBUG("crtc%d fps : %d\n", crtc->base.id, c_bridge->dsi_mode.timing.refresh_rate);
+				}
+			}
+		}
+
+		c_bridge = NULL;
+		display = NULL;
+	}
+}
+#endif
+
 void sde_crtc_commit_kickoff(struct drm_crtc *crtc,
 		struct drm_crtc_state *old_state)
 {
@@ -3715,6 +3858,10 @@ void sde_crtc_commit_kickoff(struct drm_crtc *crtc,
 		_sde_crtc_blend_setup(crtc, old_state, false);
 	}
 
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	ss_dfps_control(crtc);
+#endif
+
 	list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
 		if (encoder->crtc != crtc)
 			continue;
@@ -3748,6 +3895,9 @@ static int _sde_crtc_vblank_enable_no_lock(
 	struct drm_encoder *enc;
 
 	if (!sde_crtc) {
+#if defined(CONFIG_DISPLAY_SAMSUNG) // case 04436106
+		SS_XLOG_VSYNC(0x1111);
+#endif
 		SDE_ERROR("invalid crtc\n");
 		return -EINVAL;
 	}
@@ -3762,7 +3912,12 @@ static int _sde_crtc_vblank_enable_no_lock(
 		ret = pm_runtime_get_sync(crtc->dev->dev);
 		mutex_lock(&sde_crtc->crtc_lock);
 		if (ret < 0)
+		{
+#if defined(CONFIG_DISPLAY_SAMSUNG) // case 04436106
+			SS_XLOG_VSYNC(0x2222);
+#endif
 			return ret;
+		}
 
 		drm_for_each_encoder_mask(enc, crtc->dev,
 			crtc->state->encoder_mask) {
@@ -4130,6 +4285,7 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 	sde_cp_crtc_disable(crtc);
 
 	mutex_unlock(&sde_crtc->crtc_lock);
+
 }
 
 static void sde_crtc_enable(struct drm_crtc *crtc,
@@ -4230,6 +4386,7 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	/* Enable ESD thread */
 	for (i = 0; i < cstate->num_connectors; i++)
 		sde_connector_schedule_status_work(cstate->connectors[i], true);
+
 }
 
 /* no input validation - caller API has all the checks */
@@ -4813,6 +4970,42 @@ static int _sde_crtc_check_zpos(struct drm_crtc_state *state,
 	return rc;
 }
 
+bool sde_crtc_is_fod_enabled(struct drm_crtc_state *state)
+{
+	struct sde_crtc_state *cstate = to_sde_crtc_state(state);
+
+	return cstate->fod_dim_alpha != 0;
+}
+
+static void
+sde_crtc_fod_atomic_check(struct sde_crtc_state *cstate,
+			  struct plane_state *pstates, int cnt)
+{
+	unsigned int fod_plane_idx, plane_idx;
+	u8 alpha = 0;
+
+	for (plane_idx = 0; plane_idx < cnt; plane_idx++)
+		if (sde_plane_is_fod_layer(pstates[plane_idx].drm_pstate))
+			break;
+
+	fod_plane_idx = plane_idx;
+
+	if (fod_plane_idx != cnt) {
+		struct dsi_display *display = get_main_display();
+		alpha = dsi_panel_get_fod_dim_alpha(display->panel);
+	}
+
+	cstate->fod_dim_alpha = alpha;
+
+	for (plane_idx = 0; plane_idx < cnt; plane_idx++) {
+		if (plane_idx == fod_plane_idx)
+			continue;
+
+		sde_plane_set_fod_dim_alpha(pstates[plane_idx].sde_pstate,
+					    alpha);
+	}
+}
+
 static int _sde_crtc_atomic_check_pstates(struct drm_crtc *crtc,
 		struct drm_crtc_state *state,
 		struct plane_state *pstates,
@@ -4841,6 +5034,8 @@ static int _sde_crtc_atomic_check_pstates(struct drm_crtc *crtc,
 			plane, multirect_plane, &cnt);
 	if (rc)
 		return rc;
+
+	sde_crtc_fod_atomic_check(cstate, pstates, cnt);
 
 	/* assign mixer stages based on sorted zpos property */
 	rc = _sde_crtc_check_zpos(state, sde_crtc, pstates, cstate, mode, cnt);
@@ -5008,6 +5203,9 @@ int sde_crtc_vblank(struct drm_crtc *crtc, bool en)
 
 	if (!crtc) {
 		SDE_ERROR("invalid crtc\n");
+#if defined(CONFIG_DISPLAY_SAMSUNG) // case 04436106
+		SS_XLOG_VSYNC(0x1111);
+#endif
 		return -EINVAL;
 	}
 	sde_crtc = to_sde_crtc(crtc);

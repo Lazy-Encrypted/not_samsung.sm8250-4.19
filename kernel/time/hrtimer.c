@@ -59,6 +59,8 @@
 
 #include "tick-internal.h"
 
+#include <linux/sec_debug.h>
+
 /*
  * Masks for selecting the soft and hard context timers from
  * cpu_base->active
@@ -1487,11 +1489,13 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 	 */
 	raw_spin_unlock_irqrestore(&cpu_base->lock, flags);
 	trace_hrtimer_expire_entry(timer, now);
+	sec_debug_msg_log("hrtimer %pS entry", fn);
 	lockdep_hrtimer_enter(timer);
 
 	restart = fn(timer);
 
 	lockdep_hrtimer_exit(timer);
+	sec_debug_msg_log("hrtimer %pS exit", fn);
 	trace_hrtimer_expire_exit(timer);
 	raw_spin_lock_irq(&cpu_base->lock);
 
@@ -1917,6 +1921,9 @@ int hrtimers_prepare_cpu(unsigned int cpu)
 	cpu_base->expires_next = KTIME_MAX;
 	cpu_base->softirq_expires_next = KTIME_MAX;
 	cpu_base->online = 1;
+
+	restore_pcpu_tick(cpu);
+
 	return 0;
 }
 
@@ -2011,6 +2018,7 @@ static void __migrate_hrtimers(unsigned int scpu, bool remove_pinned)
 int hrtimers_dead_cpu(unsigned int scpu)
 {
 	BUG_ON(cpu_online(scpu));
+	save_pcpu_tick(scpu);
 	tick_cancel_sched_timer(scpu);
 
 	/*

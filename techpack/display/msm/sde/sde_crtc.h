@@ -441,6 +441,8 @@ struct sde_crtc_state {
 
 	struct sde_core_perf_params new_perf;
 	int secure_session;
+	bool color_invert_on;
+	u8 fod_dim_alpha;
 };
 
 enum sde_crtc_irq_state {
@@ -558,6 +560,8 @@ static inline void sde_crtc_set_needs_hw_reset(struct drm_crtc *crtc)
  */
 int sde_crtc_reset_hw(struct drm_crtc *crtc, struct drm_crtc_state *old_state,
 	bool recovery_events);
+
+void sde_crtc_reset_hw_immediate(struct drm_crtc *crtc, u32 xin_mask);
 
 /**
  * sde_crtc_request_frame_reset - requests for next frame reset
@@ -903,5 +907,7 @@ static inline void sde_crtc_set_compression_ratio(
 end:
 	SDE_DEBUG("sde_crtc comp ratio: %d\n", sde_crtc->comp_ratio);
 }
+
+bool sde_crtc_is_fod_enabled(struct drm_crtc_state *state);
 
 #endif /* _SDE_CRTC_H_ */

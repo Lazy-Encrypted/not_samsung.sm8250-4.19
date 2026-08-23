@@ -120,6 +120,9 @@
 #include <linux/mroute.h>
 #endif
 #include <net/l3mdev.h>
+#ifdef CONFIG_NET_ANALYTICS
+#include <net/analytics.h>
+#endif
 
 #include <trace/events/sock.h>
 
@@ -809,6 +812,9 @@ int inet_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 {
 	struct sock *sk = sock->sk;
 	const struct proto *prot;
+#ifdef CONFIG_NET_ANALYTICS
+	int err;
+#endif
 
 	sock_rps_record_flow(sk);
 
@@ -820,7 +826,14 @@ int inet_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 	    inet_autobind(sk))
 		return -EAGAIN;
 
+#ifdef CONFIG_NET_ANALYTICS
+	err = prot->sendmsg(sk, msg, size);
+	net_usr_tx(sk, err);
+
+	return err;
+#else
 	return prot->sendmsg(sk, msg, size);
+#endif
 }
 EXPORT_SYMBOL(inet_sendmsg);
 
@@ -862,6 +875,11 @@ int inet_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 			    flags & ~MSG_DONTWAIT, &addr_len);
 	if (err >= 0)
 		msg->msg_namelen = addr_len;
+
+#ifdef CONFIG_NET_ANALYTICS
+	net_usr_rx(sk, err);
+#endif
+
 	return err;
 }
 EXPORT_SYMBOL(inet_recvmsg);

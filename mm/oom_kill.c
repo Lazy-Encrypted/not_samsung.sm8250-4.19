@@ -57,7 +57,7 @@ int sysctl_panic_on_oom =
 IS_ENABLED(CONFIG_DEBUG_PANIC_ON_OOM) ? 2 : 0;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks = 1;
-int sysctl_reap_mem_on_sigkill = 1;
+int sysctl_reap_mem_on_sigkill;
 
 static int panic_on_adj_zero;
 module_param(panic_on_adj_zero, int, 0644);
@@ -583,6 +583,10 @@ void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 {
 	struct task_struct *p;
 	struct task_struct *task;
+	unsigned long cur_rss_sum;
+	unsigned long heaviest_rss_sum = 0;
+	char heaviest_comm[TASK_COMM_LEN];
+	pid_t heaviest_pid;
 
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
@@ -607,9 +611,20 @@ void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 			mm_pgtables_bytes(task->mm),
 			get_mm_counter(task->mm, MM_SWAPENTS),
 			task->signal->oom_score_adj, task->comm);
+		cur_rss_sum = get_mm_rss(task->mm) +
+					get_mm_counter(task->mm, MM_SWAPENTS);
+		if (cur_rss_sum > heaviest_rss_sum) {
+			heaviest_rss_sum = cur_rss_sum;
+			strncpy(heaviest_comm, task->comm, TASK_COMM_LEN);
+			heaviest_pid = task->pid;
+		}
 		task_unlock(task);
 	}
 	rcu_read_unlock();
+	if (heaviest_rss_sum)
+		pr_info("heaviest_task:%s(%d) rss_pages:%lu\n", heaviest_comm,
+			heaviest_pid, heaviest_rss_sum);
+	ion_account_print_usage();
 }
 
 static void dump_header(struct oom_control *oc, struct task_struct *p)
@@ -642,6 +657,7 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
  */
 static atomic_t oom_victims = ATOMIC_INIT(0);
 static DECLARE_WAIT_QUEUE_HEAD(oom_victims_wait);
+atomic64_t last_oom_jiffies = ATOMIC64_INIT(0);
 
 static bool oom_killer_disabled __read_mostly;
 
@@ -900,6 +916,7 @@ static void mark_oom_victim(struct task_struct *tsk)
 	cred = get_task_cred(tsk);
 	trace_mark_victim(tsk, cred->uid.val);
 	put_cred(cred);
+	atomic64_set(&last_oom_jiffies, jiffies);
 }
 
 /**
@@ -953,6 +970,23 @@ bool oom_killer_disable(signed long timeout)
 	ret = wait_event_interruptible_timeout(oom_victims_wait,
 			!atomic_read(&oom_victims), timeout);
 	if (ret <= 0) {
+		struct task_struct *p, *t, *child;
+		int nr_victims = 0;
+
+		read_lock(&tasklist_lock);
+		for_each_process_thread(p, t)
+			list_for_each_entry(child, &t->children, sibling)
+				if (test_tsk_thread_flag(child, TIF_MEMDIE))
+					pr_info("%s process with TIF_MEMDIE %d %s %d\n",
+						__func__, child->pid, child->comm, ++nr_victims);
+		read_unlock(&tasklist_lock);
+		pr_info("%s failed oom_victims %d last_oom_jiffies %lld current %ld\n",
+			__func__, atomic_read(&oom_victims),
+			atomic64_read(&last_oom_jiffies), jiffies);
+
+		if (!nr_victims)
+			atomic_set(&oom_victims, 0);
+
 		oom_killer_enable();
 		return false;
 	}

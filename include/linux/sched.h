@@ -379,6 +379,7 @@ struct sched_info {
 
 	/* Time spent waiting on a runqueue: */
 	unsigned long long		run_delay;
+	unsigned long long		last_sum_run_delay;
 
 	/* Timestamps: */
 
