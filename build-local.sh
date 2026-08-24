@@ -88,7 +88,7 @@ case "$add_choice" in
         ;;
 esac
 
-DEFCONFIG="$PLATFORM_DEFCONFIG $COMMON_DEFCONFIG $PROJECT_CONFIG $EXTRA_CONFIG"
+DEFCONFIG="vendor/samsung/kona-r8q-halium_defconfig"
 
 
 # Paths
