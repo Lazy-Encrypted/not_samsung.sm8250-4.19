@@ -4155,9 +4155,9 @@ static void sec_bat_get_temperature_info(
 	sec_bat_calc_unknown_wpc_temp(battery, &batt_temp, wpc_temp, usb_temp);
 #endif
 
-	battery->temperature = batt_temp;
-	battery->usb_temp = usb_temp;
-	battery->chg_temp = chg_temp;
+	battery->temperature = 200;
+	battery->usb_temp = 200;
+	battery->chg_temp = 200;
 #if defined(CONFIG_DIRECT_CHARGING)
 	battery->dchg_temp = dchg_temp;
 #endif
