@@ -109,7 +109,7 @@ static inline bool __transparent_hugepage_enabled(struct vm_area_struct *vma)
 	if (transparent_hugepage_flags & (1 << TRANSPARENT_HUGEPAGE_FLAG))
 		return true;
 
-	if (vma->vm_file && IS_DAX(vma->vm_file->f_inode))
+	if (0)
 		return true;
 
 	if (transparent_hugepage_flags &
