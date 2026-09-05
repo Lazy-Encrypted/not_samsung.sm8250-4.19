@@ -2057,6 +2057,7 @@ static ssize_t tcs3407_name_show(struct device *dev,
 {
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	(void)ctx;
 	char chip_name[NAME_LEN];
 
 	switch (ctx->deviceId) {
@@ -2268,6 +2269,7 @@ struct device_attribute *attr, char *buf)
 {
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	(void)ctx;
 
 	return snprintf(buf, PAGE_SIZE, "%d\n", ctx->deviceId);
 }
@@ -2384,6 +2386,7 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 
 #if !defined(CONFIG_LEDS_KTD2692)|| !defined(CONFIG_LEDS_RT8547)
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	(void)ctx;
 #endif
 	s32 eol_led_mode;
 
@@ -2615,6 +2618,7 @@ struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	(void)ctx;
 
 	int err = 0;
 	int mode = 0;
@@ -2959,6 +2963,7 @@ static int tcs3407_eol_mode_handler(struct tcs3407_device_data *data)
 {
 	int i;
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	(void)ctx;
 
 	switch (data->eol_state) {
 	case EOL_STATE_INIT:
