@@ -29,7 +29,9 @@ jobs:
     steps:
       - name: Check Out
         uses: actions/checkout@v3
-
+        with:
+          submodules: recursive
+    
       - name: Set Timezone
         uses: szenius/set-timezone@v1.2
         with:
