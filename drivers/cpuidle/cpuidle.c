@@ -254,7 +254,7 @@ int __nocfi cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_drive
 	if (!cpuidle_state_is_coupled(drv, index))
 		local_irq_enable();
 
-	diff = ktime_sub(time_end, time_start);
+	ktime_t diff = ktime_sub(time_end, time_start);
 
 	dev->last_residency_ns = (int) diff;
 
