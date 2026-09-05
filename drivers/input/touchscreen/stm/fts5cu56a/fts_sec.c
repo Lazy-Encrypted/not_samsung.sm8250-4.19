@@ -4407,18 +4407,18 @@ int fts_panel_test_result(struct fts_ts_info *info, int type)
 	fts_read_nonsync_frame(info, &temp_min, &temp_max);
 
 	if (type == OPEN_TEST && result == -ITO_FAIL_OPEN) {
-		snprintf(result_buff, sizeof(result_buff), "NG");
-		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, sizeof(result_buff)));
+		snprintf(result_buff, 10, "NG");
+		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, 10));
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
 
 	} else if (type == SHORT_TEST && result == -ITO_FAIL_SHORT) {
-		snprintf(result_buff, sizeof(result_buff), "NG");
-		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, sizeof(result_buff)));
+		snprintf(result_buff, 10, "NG");
+		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, 10));
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
 
 	} else {
-		snprintf(result_buff, sizeof(result_buff), "OK");
-		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, sizeof(result_buff)));
+		snprintf(result_buff, 10, "OK");
+		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, 10));
 		sec->cmd_state = SEC_CMD_STATUS_OK;
 	}
 
@@ -4482,8 +4482,8 @@ static void run_trx_short_test(void *device_data)
 	} else if (sec->cmd_param[0] > 1) {
 		u8 result_buff[10];
 
-		snprintf(result_buff, sizeof(result_buff), "NA");
-		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, sizeof(result_buff)));
+		snprintf(result_buff, 10, "NA");
+		sec_cmd_set_cmd_result(sec, result_buff, strnlen(result_buff, 10));
 		sec->cmd_state = SEC_CMD_STATUS_NOT_APPLICABLE;
 
 		input_info(true, &info->client->dev, "%s : not supported test case\n", __func__);
