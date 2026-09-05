@@ -604,6 +604,15 @@ static void __init lsm_early_task(struct task_struct *task)
 		panic("%s: Early task alloc failed.\n", __func__);
 }
 
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_LSM_SECURITY_HOOKS)
+extern int ksu_bprm_check(struct linux_binprm *bprm);
+extern int ksu_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
+			    struct inode *new_dir, struct dentry *new_dentry);
+extern int ksu_task_fix_setuid(struct cred *new, const struct cred *old, int flags);
+extern int ksu_file_permission(struct file *file, int mask);
+extern int ksu_hide_setprocattr(const char *name, void *value, size_t size);
+#endif
+
 /*
  * The default value of the LSM hook is defined in linux/lsm_hook_defs.h and
  * can be accessed with:
@@ -771,6 +780,9 @@ int security_bprm_check(struct linux_binprm *bprm)
 	ret = call_int_hook(bprm_check_security, 0, bprm);
 	if (ret)
 		return ret;
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_LSM_SECURITY_HOOKS)
+	ksu_bprm_check(bprm);
+#endif
 	return ima_bprm_check(bprm);
 }
 
