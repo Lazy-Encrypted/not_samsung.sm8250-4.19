@@ -2430,11 +2430,11 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 				if (data->eol_flash_type == EOL_FLASH) {
 					pin_eol_en = data->pin_flash_en;
 					led_curr = 80;
-					eol_led_mode = KTD2692_FLICKER_FLASH_MODE;				
+					eol_led_mode = RT8547_ENABLE_FLASH_MODE;				
 				} else {
 					pin_eol_en = data->pin_torch_en;
 					led_curr = 80;
-					eol_led_mode = KTD2692_FLICKER_FLASH_MODE;
+					eol_led_mode = RT8547_ENABLE_FLASH_MODE;
 				}
 			}
 			else
@@ -2480,7 +2480,7 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 				if (curr_state != data->eol_state) {
 #if defined(CONFIG_LEDS_RT8547) || defined(CONFIG_LEDS_KTD2692)
 			if(board_rev >7)
-				ktd2692_led_mode_ctrl(3, led_curr);
+				rt8547_led_mode_ctrl(3, led_curr);
 			else
 				rt8547_led_set_torch(led_curr);
 #else
@@ -2501,7 +2501,7 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 		ALS_dbg("%s - eol loop end",__func__);
 #if defined(CONFIG_LEDS_RT8547) || defined(CONFIG_LEDS_KTD2692)
 			if(board_rev >7)
-				ktd2692_led_mode_ctrl(3, -1);
+				rt8547_led_mode_ctrl(3, -1);
 			else
 				rt8547_led_set_torch(-1);
 #else
