@@ -590,7 +590,7 @@ static int cam_flash_torch(
 				}
 
 				CAM_INFO(CAM_FLASH, "CAM Flash OFF");
-				ktd2692_led_mode_ctrl(KTD2692_DISABLES_TORCH_FLASH_MODE, 0);
+				rt8547_led_mode_ctrl(RT8547_DISABLES_TORCH_FLASH_MODE, 0);
 
 				flash_ctrl->flash_state = CAM_FLASH_STATE_START;
 				return 0;
@@ -622,7 +622,7 @@ static int cam_flash_torch(
 				}
 
 				CAM_INFO(CAM_FLASH, "CAM Low Flash ON");
-				rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 200);
+				rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 200);
 				if (rc)
 					CAM_ERR(CAM_FLASH, "Fire Low Flash failed: %d", rc);
 
@@ -653,13 +653,13 @@ static int cam_flash_torch(
 				int rc = 0;
 				CAM_INFO(CAM_FLASH, "CAM Flash ON Entered ");
 				if (flash_data->led_current_ma[0] == 100) {
-					rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 125);
+					rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 125);
 				}
 				else if (flash_data->led_current_ma[0] == 240) {
-					rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 225);
+					rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 225);
 				}
 				else {
-					rc = ktd2692_led_mode_ctrl(KTD2692_ENABLE_FLASH_MODE, 1400);
+					rc = rt8547_led_mode_ctrl(RT8547_ENABLE_FLASH_MODE, 1400);
 				}
 
 				CAM_INFO(CAM_FLASH, "CAM Flash ON, current = %d",flash_data->led_current_ma[0]);
@@ -704,12 +704,12 @@ static int cam_flash_torch(
 
 				CAM_INFO(CAM_FLASH, "CAM Torch Flash ON, %d mA", flash_data->led_current_ma[0]);
 			#if defined(CONFIG_FLASH_CURRENT_JAPAN)
-					rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 50);
+					rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 50);
 			#else
 				if (flash_data->led_current_ma[0] == 140) {
-					rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 100);
+					rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 100);
 				} else {
-					rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 175);
+					rc =  rt8547_led_mode_ctrl(RT8547_ENABLE_TORCH_MODE, 175);
 				}
 			#endif
 
@@ -2233,7 +2233,7 @@ void cam_flash_shutdown(struct cam_flash_ctrl *fctrl)
 	if ( board_rev > 7)
 	{
 		sysfs_flash_op_kt = 0;
-		ktd2692_led_mode_ctrl(KTD2692_DISABLES_TORCH_FLASH_MODE, 0);
+		rt8547_led_mode_ctrl(RT8547_DISABLES_TORCH_FLASH_MODE, 0);
 	}
 	else
 	{	
