@@ -255,7 +255,6 @@ int __nocfi cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_drive
 		local_irq_enable();
 
 		dev->last_residency_ns = (int) ktime_sub(time_end, time_start);
-	dev->last_residency_ns = (int) diff;
 
 	if (entered_state >= 0) {
 		s64 diff, delay = drv->states[entered_state].exit_latency_ns;
