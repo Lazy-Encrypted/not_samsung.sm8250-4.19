@@ -585,7 +585,7 @@ EXPORT_SYMBOL_GPL(iomap_invalidatepage);
 #ifdef CONFIG_MIGRATION
 int
 iomap_migrate_page(struct address_space *mapping, struct page *newpage,
-		struct page *page, enum migrate_mode mode)
+		struct page *page, int mode)
 {
 	int ret;
 
