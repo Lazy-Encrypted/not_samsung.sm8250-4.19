@@ -9,28 +9,50 @@
  */
 
 #include <linux/timekeeper_internal.h>
+#include <linux/capability.h>
 #include <linux/module.h>
+#include <linux/capability.h>
 #include <linux/interrupt.h>
+#include <linux/capability.h>
 #include <linux/percpu.h>
+#include <linux/capability.h>
 #include <linux/init.h>
+#include <linux/capability.h>
 #include <linux/mm.h>
+#include <linux/capability.h>
 #include <linux/nmi.h>
+#include <linux/capability.h>
 #include <linux/sched.h>
+#include <linux/capability.h>
 #include <linux/sched/loadavg.h>
+#include <linux/capability.h>
 #include <linux/sched/clock.h>
+#include <linux/capability.h>
 #include <linux/syscore_ops.h>
+#include <linux/capability.h>
 #include <linux/clocksource.h>
+#include <linux/capability.h>
 #include <linux/jiffies.h>
+#include <linux/capability.h>
 #include <linux/time.h>
+#include <linux/capability.h>
 #include <linux/timex.h>
+#include <linux/capability.h>
 #include <linux/tick.h>
+#include <linux/capability.h>
 #include <linux/stop_machine.h>
+#include <linux/capability.h>
 #include <linux/pvclock_gtod.h>
+#include <linux/capability.h>
 #include <linux/compiler.h>
+#include <linux/capability.h>
 
 #include "tick-internal.h"
+#include <linux/capability.h>
 #include "ntp_internal.h"
+#include <linux/capability.h>
 #include "timekeeping_internal.h"
+#include <linux/capability.h>
 
 #define TK_CLEAR_NTP		(1 << 0)
 #define TK_MIRROR		(1 << 1)
