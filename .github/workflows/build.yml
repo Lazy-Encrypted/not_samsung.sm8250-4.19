@@ -45,8 +45,9 @@ jobs:
 
       - name: Run build script
         run: |
-          export DEVICE=${{ env.DEVICE }}
-          ./build.sh
+         chmod +x build.sh
+         export DEVICE=r8q
+         ./build.sh
 
       - name: Set Build End Time
         run: echo "END_TIME=$(date +%s)" >> $GITHUB_ENV
