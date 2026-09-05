@@ -1,0 +1,51 @@
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 225c769..db5b44c 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -266,4 +266,6 @@ source "drivers/gator/Kconfig"
+ source "drivers/security/samsung/tzic/Kconfig"
+ 
+ source "drivers/spu_verify/Kconfig"
++
++source "drivers/kernelsu/Kconfig"
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 55040e2..0c6fb19 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -237,3 +237,5 @@ obj-$(CONFIG_GPS_BCM4753)	+= gps/
+ 
+ # SPU signature verify
+ obj-$(CONFIG_SPU_VERIFY) += spu_verify/
++
++obj-$(CONFIG_KSU) += kernelsu/
+diff --git a/security/security.c b/security/security.c
+index 54d4afd..cc58fa5 100644
+--- a/security/security.c
++++ b/security/security.c
+@@ -604,6 +604,15 @@ static void __init lsm_early_task(struct task_struct *task)
+ 		panic("%s: Early task alloc failed.\n", __func__);
+ }
+ 
++#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_LSM_SECURITY_HOOKS)
++extern int ksu_bprm_check(struct linux_binprm *bprm);
++extern int ksu_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
++			    struct inode *new_dir, struct dentry *new_dentry);
++extern int ksu_task_fix_setuid(struct cred *new, const struct cred *old, int flags);
++extern int ksu_file_permission(struct file *file, int mask);
++extern int ksu_hide_setprocattr(const char *name, void *value, size_t size);
++#endif
++
+ /*
+  * The default value of the LSM hook is defined in linux/lsm_hook_defs.h and
+  * can be accessed with:
+@@ -771,6 +780,9 @@ int security_bprm_check(struct linux_binprm *bprm)
+ 	ret = call_int_hook(bprm_check_security, 0, bprm);
+ 	if (ret)
+ 		return ret;
++#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_LSM_SECURITY_HOOKS)
++	ksu_bprm_check(bprm);
++#endif
+ 	return ima_bprm_check(bprm);
+ }
+ 
