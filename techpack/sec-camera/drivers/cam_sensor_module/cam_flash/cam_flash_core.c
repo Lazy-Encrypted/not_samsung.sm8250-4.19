@@ -1,3 +1,4 @@
+#include <linux/sec_class.h>
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
@@ -21,7 +22,10 @@
 #endif
 
 #if defined(CONFIG_LEDS_KTD2692)
-extern bool sysfs_flash_op_kt;
+
+static unsigned int sec_hw_rev(void) { return 0; }
+bool sysfs_flash_op_kt = false;
+
 #endif
 #if defined(CONFIG_LEDS_RT8547) || defined(CONFIG_LEDS_S2MPB02)
 extern bool sysfs_flash_op;
