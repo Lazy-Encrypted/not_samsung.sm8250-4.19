@@ -2386,8 +2386,8 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 
 #if !defined(CONFIG_LEDS_KTD2692)|| !defined(CONFIG_LEDS_RT8547)
 	ams_deviceCtx_t *ctx = data->deviceCtx;
-	(void)ctx;
 	s32 eol_led_mode;
+	(void)ctx;
 #endif
 
 #if defined(CONFIG_LEDS_KTD2692)|| defined(CONFIG_LEDS_RT8547)
@@ -2618,10 +2618,10 @@ struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
+	int mode = 0;
 	int err = 0;
 	(void)ctx;
 
-	int mode = 0;
 	u8 preEnalble = data->enabled;
 
 	err = kstrtoint(buf, 10, &mode);
