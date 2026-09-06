@@ -2393,7 +2393,6 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 
 #if defined(CONFIG_LEDS_KTD2692)|| defined(CONFIG_LEDS_RT8547)
 #endif
-	int led_curr = 0;
 	int pulse_duty = 0;
 	int curr_state = EOL_STATE_INIT;
 	int ret = 0;
@@ -2619,11 +2618,11 @@ struct device_attribute *attr, const char *buf, size_t size)
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
 
+	u8 preEnalble = data->enabled;
 	int mode = 0;
 	int err = 0;
 	(void)ctx;
 
-	u8 preEnalble = data->enabled;
 	err = kstrtoint(buf, 10, &mode);
 	if (err < 0) {
 		ALS_err("%s - kstrtoint failed.(%d)\n", __func__, err);
