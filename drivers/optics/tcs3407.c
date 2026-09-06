@@ -2393,6 +2393,7 @@ static int tcs3407_eol_mode(struct tcs3407_device_data *data)
 
 #if defined(CONFIG_LEDS_KTD2692)|| defined(CONFIG_LEDS_RT8547)
 #endif
+		int led_curr = 0;
 	int pulse_duty = 0;
 	int curr_state = EOL_STATE_INIT;
 	int ret = 0;
