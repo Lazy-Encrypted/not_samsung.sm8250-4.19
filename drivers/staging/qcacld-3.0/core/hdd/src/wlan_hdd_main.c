@@ -1,3 +1,5 @@
+#define CONFIG_LITTLE_CPU_MASK 0x0F
+#define CONFIG_BIG_CPU_MASK 0x70
 	/*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
