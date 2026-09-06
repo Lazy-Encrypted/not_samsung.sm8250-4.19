@@ -2618,8 +2618,8 @@ struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct tcs3407_device_data *data = dev_get_drvdata(dev);
 	ams_deviceCtx_t *ctx = data->deviceCtx;
-	(void)ctx;
 
+	(void)ctx;
 	int err = 0;
 	int mode = 0;
 	u8 preEnalble = data->enabled;
