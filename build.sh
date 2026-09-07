@@ -71,6 +71,11 @@ make -j$(nproc --all) O=out ARCH=arm64 \
     OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
     CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
     LLVM=1 LLVM_IAS=1 Image
+make -j$(nproc --all) O=out ARCH=arm64 \
+    CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
+    OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+    CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+    LLVM=1 LLVM_IAS=1 dtbs
     
 if [ -f "$BOOT_DIR/Image" ]; then
     echo -e "${GREEN}Kernel Image found!${NC}"
