@@ -257,7 +257,7 @@ config INPUT_BOOST_FREQ_LP
 
 config INPUT_BOOST_FREQ_PERF
 	int "Performance cluster boost freq"
-	default "825600"
+	default "1286400"
 	help
 	  Input boost frequency for the performance CPU cluster.
 
