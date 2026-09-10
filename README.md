@@ -1,30 +1,19 @@
-# (not) Samsung SM8250 Kernel
+Linux kernel
+============
 
-# Introduction
-- This repository is always compliant with the latest LineageOS common sm8250 kernel changes.
-- All branches are prone to force push, with the sole exception of `lineage-23.2`
+There are several guides for kernel developers and users. These guides can
+be rendered in a number of formats, like HTML and PDF. Please read
+Documentation/admin-guide/README.rst first.
 
-## Warning:
-- The kernel source code is **always** under development and may cause some unpredictable problems.
-- **You are being warned.**
-- Credit me if you use this source for any of your projects.
-- Please use it with caution.
+In order to build the documentation, use ``make htmldocs`` or
+``make pdfdocs``.  The formatted documentation can also be read online at:
 
-## Warranty
-- None, none at all. I am handing you a **sharp knife**, it is not on me if you stab yourself with it.
-- no warranties.
-- no support.
-- not.
+    https://www.kernel.org/doc/html/latest/
 
-## Notes
-- This kernel is combining contributions from multiple upstreams to make it as practical and well-rounded as possible.
-- Code required for OneUI support was selectively cherry-picked from various sources.
-- Support for all the remaining Samsung SM8250 devices is available in the source, however it probably needs some work to get it refined.
-- I (s-k-y.e) support all the roms available for r8q, from Android 11 up to Android 17 QPR0, with OneUI support starting in Android14.
-- Some users says that it also works fine in Android13/OneUI5.1, however that's unsupported.
+There are various text files in the Documentation/ subdirectory,
+several of them using the Restructured Text markup notation.
+See Documentation/00-INDEX for a list of what is contained in each file.
 
-## Telegram
-- [t.me/not_kernel](https://t.me/not_kernel)
-- [t.me/not_kernelbuilds](https://t.me/not_kernelbuilds)
-
-## Engineered to perfection.
+Please read the Documentation/process/changes.rst file, as it contains the
+requirements for building and running the kernel, and information about
+the problems which may result by upgrading your kernel.
