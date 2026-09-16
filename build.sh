@@ -7,7 +7,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # ===== AnyKernel3 =====
-AK3_REPO="https://github.com/notkernel-oss/AnyKernel3"
+AK3_REPO="https://github.com/Lazy-Encrypted/AnyKernel3"
 AK3_BRANCH="$DEVICE"
 
 ZIPNAME="not-$(date '+%Y%m%d').zip"
