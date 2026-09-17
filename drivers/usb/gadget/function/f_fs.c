@@ -1337,8 +1337,6 @@ static int
 ffs_epfile_release(struct inode *inode, struct file *file)
 {
 	struct ffs_epfile *epfile = inode->i_private;
-	struct ffs_data *ffs = epfile->ffs;
-	unsigned long flags;
 
 	ENTER();
 
