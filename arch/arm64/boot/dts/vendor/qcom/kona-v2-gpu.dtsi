@@ -80,9 +80,9 @@
 				qcom,bus-min-ddr7 = <11>;
 				qcom,bus-max-ddr7 = <11>;
 
-				qcom,bus-freq-ddr8 = <13>;
-				qcom,bus-min-ddr8 = <13>;
-				qcom,bus-max-ddr8 = <13>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
 
 				qcom,acd-level = <0x802b5ffd>;
 			};
@@ -94,9 +94,9 @@
 				qcom,bus-min-ddr7 = <11>;
 				qcom,bus-max-ddr7 = <11>;
 
-				qcom,bus-freq-ddr8 = <12>;
-				qcom,bus-min-ddr8 = <12>;
-				qcom,bus-max-ddr8 = <12>;
+				qcom,bus-freq-ddr8 = <11>;
+				qcom,bus-min-ddr8 = <11>;
+				qcom,bus-max-ddr8 = <11>;
 
 				qcom,acd-level = <0x802b5ffd>;
 			};
