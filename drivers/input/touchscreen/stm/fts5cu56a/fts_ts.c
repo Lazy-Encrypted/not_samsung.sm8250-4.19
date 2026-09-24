@@ -3688,6 +3688,8 @@ void fts_reinit(struct fts_ts_info *info, bool delay)
 
 	fts_set_fod_rect(info);
 
+	fts_change_scan_rate(info, 120);
+
 	if (info->brush_mode) {
 		u8 regAdd[3] = {FTS_CMD_SET_FUNCTION_ONOFF, FTS_FUNCTION_ENABLE_BRUSH_MODE, info->brush_mode};
 
