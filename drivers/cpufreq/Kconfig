@@ -251,7 +251,7 @@ config WAKE_BOOST_DURATION_MS
 
 config INPUT_BOOST_FREQ_LP
 	int "Low-power cluster boost freq"
-	default "1171200"
+	default "1708800"
 	help
 	  Input boost frequency for the low-power CPU cluster.
 
