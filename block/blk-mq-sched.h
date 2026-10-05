@@ -92,4 +92,9 @@ static inline bool blk_mq_sched_needs_restart(struct blk_mq_hw_ctx *hctx)
 	return test_bit(BLK_MQ_S_SCHED_RESTART, &hctx->state);
 }
 
+static inline bool blk_mq_is_sync_read(unsigned int op)
+{
+	return op_is_sync(op) && !op_is_write(op);
+}
+
 #endif
