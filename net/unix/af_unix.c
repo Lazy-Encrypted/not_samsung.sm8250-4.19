@@ -1647,6 +1647,42 @@ static bool unix_skb_scm_eq(struct sk_buff *skb,
 	       unix_secdata_eq(scm, skb);
 }
 
+static bool unix_is_surfaceflinger_or_hwc(void)
+{
+	const char *comm = current->group_leader->comm;
+
+	return !strcmp(comm, "surfaceflinger") ||
+	       !strcmp(comm, "composer-servic");
+}
+
+static bool unix_is_logdw(struct sock *sk)
+{
+	struct unix_address *addr;
+	struct sockaddr_un *sunaddr;
+
+	addr = READ_ONCE(unix_sk(sk)->addr);
+	if (!addr)
+		return false;
+
+	sunaddr = (struct sockaddr_un *)addr->name;
+
+	return sunaddr->sun_family == AF_UNIX &&
+	       !strcmp(sunaddr->sun_path, "/dev/socket/logdw");
+}
+
+static bool unix_is_error_log(struct sk_buff *skb)
+{
+	unsigned char prio;
+
+	if (!skb || skb->len < 12)
+		return false;
+
+	if (!skb_header_pointer(skb, 11, 1, &prio))
+		return false;
+
+	return prio == 6 || prio == 7;
+}
+
 /*
  *	Send AF_UNIX data.
  */
@@ -1736,6 +1772,13 @@ restart:
 					hash, &err);
 		if (other == NULL)
 			goto out_free;
+	}
+
+	if (unix_is_surfaceflinger_or_hwc() &&
+	    unix_is_logdw(other) &&
+	    unix_is_error_log(skb)) {
+		err = len;
+		goto out_free;
 	}
 
 	if (sk_filter(other, skb) < 0) {
