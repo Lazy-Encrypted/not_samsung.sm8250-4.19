@@ -387,7 +387,7 @@ static int z_erofs_shifted_transform(const struct z_erofs_decompress_req *rq,
 	}
 
 	src = kmap_atomic(*rq->in);
-	if (rq->out[0]) {
+	if (rq->out[0] && rq->out[0] != *rq->in) {
 		dst = kmap_atomic(rq->out[0]);
 		memcpy(dst + rq->pageofs_out, src, righthalf);
 		kunmap_atomic(dst);
@@ -396,7 +396,8 @@ static int z_erofs_shifted_transform(const struct z_erofs_decompress_req *rq,
 	if (nrpages_out == 2) {
 		DBG_BUGON(!rq->out[1]);
 		if (rq->out[1] == *rq->in) {
-			memmove(src, src + righthalf, rq->pageofs_out);
+			if (rq->pageofs_out)
+				memmove(src, src + righthalf, rq->pageofs_out);
 		} else {
 			dst = kmap_atomic(rq->out[1]);
 			memcpy(dst, src + righthalf, rq->pageofs_out);
