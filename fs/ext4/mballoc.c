@@ -2214,7 +2214,7 @@ repeat:
 				group = 0;
 
 			/* prevent unnecessary buddy loading. */
-			if (cr < CR_ANY_FREE &&
+			if (cr < 3 &&
 			    spin_is_locked(ext4_group_lock_ptr(sb, group)))
 				continue;
 
@@ -2231,7 +2231,7 @@ repeat:
 				goto out;
 
 			/* skip busy group */
-			if (cr >= CR_ANY_FREE) {
+			if (cr >= 3) {
 				ext4_lock_group(sb, group);
 			} else if (!ext4_try_lock_group(sb, group)) {
 				ext4_mb_unload_buddy(&e4b);
