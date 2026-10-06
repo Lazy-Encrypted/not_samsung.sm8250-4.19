@@ -2212,6 +2212,11 @@ repeat:
 			if (group >= ngroups)
 				group = 0;
 
+			/* prevent unnecessary buddy loading. */
+			if (cr < CR_ANY_FREE &&
+			    spin_is_locked(ext4_group_lock_ptr(sb, group)))
+				continue;
+
 			/* This now checks without needing the buddy page */
 			ret = ext4_mb_good_group(ac, group, cr);
 			if (ret <= 0) {
@@ -2224,7 +2229,13 @@ repeat:
 			if (err)
 				goto out;
 
-			ext4_lock_group(sb, group);
+			/* skip busy group */
+			if (cr >= CR_ANY_FREE) {
+				ext4_lock_group(sb, group);
+			} else if (!ext4_try_lock_group(sb, group)) {
+				ext4_mb_unload_buddy(&e4b);
+				continue;
+			}
 
 			/*
 			 * We need to check again after locking the
