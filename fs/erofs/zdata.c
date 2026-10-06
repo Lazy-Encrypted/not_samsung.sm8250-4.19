@@ -823,8 +823,7 @@ restart_now:
 	err = z_erofs_collector_begin(clt, inode, map);
 	if (err)
 		goto err_out;
-	container_of(clt->cl, struct z_erofs_pcluster,
-			primary_collection)->besteffort |= !ra;
+	clt->pcl->besteffort |= !ra;
 
 	/* preload all compressed pages (maybe downgrade role if necessary) */
 	if (should_alloc_managed_pages(fe, sbi->cache_strategy, map->m_la))
