@@ -1682,11 +1682,8 @@ static void ext4_mb_use_best_found(struct ext4_allocation_context *ac,
 	ac->ac_buddy_page = e4b->bd_buddy_page;
 	get_page(ac->ac_buddy_page);
 	/* store last allocated for subsequent stream allocation */
-	if (ac->ac_flags & EXT4_MB_STREAM_ALLOC) {
-		spin_lock(&sbi->s_md_lock);
-		sbi->s_mb_last_group = ac->ac_f_ex.fe_group;
-		spin_unlock(&sbi->s_md_lock);
-	}
+	if (ac->ac_flags & EXT4_MB_STREAM_ALLOC)
+		WRITE_ONCE(sbi->s_mb_last_group, ac->ac_f_ex.fe_group);
 }
 
 /*
@@ -2178,12 +2175,8 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
 	}
 
 	/* if stream allocation is enabled, use global goal */
-	if (ac->ac_flags & EXT4_MB_STREAM_ALLOC) {
-		/* TBD: may be hot point */
-		spin_lock(&sbi->s_md_lock);
-		ac->ac_g_ex.fe_group = sbi->s_mb_last_group;
-		spin_unlock(&sbi->s_md_lock);
-	}
+	if (ac->ac_flags & EXT4_MB_STREAM_ALLOC)
+		ac->ac_g_ex.fe_group = READ_ONCE(sbi->s_mb_last_group);
 
 	/* Let's just scan groups to find more-less suitable blocks */
 	cr = ac->ac_2order ? 0 : 1;
