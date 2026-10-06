@@ -63,6 +63,9 @@ struct z_erofs_pcluster {
 	/* A: lower limit of decompressed length and if full length or not */
 	unsigned int length;
 
+	/* L: whether extra buffer allocations are best-effort */
+	bool besteffort;
+
 	/* I: physical cluster size in pages */
 	unsigned short pclusterpages;
 

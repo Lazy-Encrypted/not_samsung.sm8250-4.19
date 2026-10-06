@@ -117,10 +117,9 @@ static int z_erofs_lz4_prepare_destpages(struct z_erofs_decompress_req *rq,
 			 * the allocation must not fail. As such, loop with
 			 * GFP_NOWAIT until the allocation succeeds.
 			 */
-			while (!(victim = __erofs_allocpage(pagepool,
-							    GFP_NOWAIT |
-							    __GFP_NOWARN,
-							    true)));
+			victim = __erofs_allocpage(pagepool, rq->gfp, true);
+			if (!victim)
+				return -ENOMEM;
 			set_page_private(victim, Z_EROFS_SHORTLIVED_PAGE);
 		}
 		rq->out[i] = victim;

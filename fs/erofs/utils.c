@@ -13,8 +13,6 @@ static unsigned int erofs_rsv_nrpages = EROFS_RESERVED_PAGES_DEFAULT;
 static unsigned int erofs_rsv_count;
 static DEFINE_SPINLOCK(erofs_rsv_lock);
 
-module_param_named(reserved_pages, erofs_rsv_nrpages, uint, 0444);
-
 struct page *__erofs_allocpage(struct list_head *pool, gfp_t gfp,
 			       bool tryrsv)
 {
