@@ -626,8 +626,8 @@ int elevator_init_mq(struct request_queue *q)
 	if (unlikely(q->elevator))
 		goto out;
 
-	if (IS_ENABLED(CONFIG_MQ_IOSCHED_SSG)) {
-		e = elevator_get(q, "ssg", false);
+	if (IS_ENABLED(CONFIG_MQ_IOSCHED_KYBER)) {
+		e = elevator_get(q, "kyber", false);
 		if (!e)
 			goto out;
 	} else {
