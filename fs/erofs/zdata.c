@@ -407,7 +407,7 @@ static void preload_compressed_pages(struct z_erofs_collector *clt,
 						PAGE_UNALLOCATED);
 				break;
 			case TRYALLOC:
-				newpage = erofs_allocpage(pagepool, gfp);
+				newpage = __erofs_allocpage(pagepool, gfp, true);
 				if (!newpage)
 					continue;
 				set_page_private(newpage,
@@ -1326,7 +1326,7 @@ repeat:
 	unlock_page(page);
 	put_page(page);
 out_allocpage:
-	page = erofs_allocpage(pagepool, gfp | __GFP_NOFAIL);
+	page = __erofs_allocpage(pagepool, gfp | __GFP_NOFAIL, true);
 	if (oldpage != cmpxchg(&pcl->compressed_pages[nr], oldpage, page)) {
 		list_add(&page->lru, pagepool);
 		cond_resched();
