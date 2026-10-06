@@ -48,26 +48,20 @@ void _erofs_info(struct super_block *sb, const char *function,
 
 static int erofs_superblock_csum_verify(struct super_block *sb, void *sbdata)
 {
-	struct erofs_super_block *dsb;
-	u32 expected_crc, crc;
+	struct erofs_super_block *dsb = sbdata + EROFS_SUPER_OFFSET;
+	u32 len = EROFS_BLKSIZ - EROFS_SUPER_OFFSET, crc;
 
-	dsb = kmemdup(sbdata + EROFS_SUPER_OFFSET,
-		      EROFS_BLKSIZ - EROFS_SUPER_OFFSET, GFP_KERNEL);
-	if (!dsb)
-		return -ENOMEM;
+	len -= offsetof(struct erofs_super_block, checksum) +
+			sizeof(dsb->checksum);
 
-	expected_crc = le32_to_cpu(dsb->checksum);
-	dsb->checksum = 0;
-	/* to allow for x86 boot sectors and other oddities. */
-	crc = crc32c(~0, dsb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
-	kfree(dsb);
+	/* skip .magic (pre-verified) and .checksum (0) fields */
+	crc = crc32c(0x5045B54A, (&dsb->checksum) + 1, len);
+	if (crc == le32_to_cpu(dsb->checksum))
+		return 0;
 
-	if (crc != expected_crc) {
-		erofs_err(sb, "invalid checksum 0x%08x, 0x%08x expected",
-			  crc, expected_crc);
-		return -EBADMSG;
-	}
-	return 0;
+	erofs_err(sb, "invalid checksum 0x%08x, 0x%08x expected",
+		  crc, le32_to_cpu(dsb->checksum));
+	return -EBADMSG;
 }
 
 static void erofs_inode_init_once(void *ptr)
