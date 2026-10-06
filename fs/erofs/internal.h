@@ -419,7 +419,15 @@ void erofs_pcpubuf_init(void);
 void erofs_pcpubuf_exit(void);
 
 /* utils.c / zdata.c */
-struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp);
+struct page *__erofs_allocpage(struct list_head *pool, gfp_t gfp,
+			       bool tryrsv);
+static inline struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp)
+{
+	return __erofs_allocpage(pool, gfp, false);
+}
+void erofs_release_pages(struct list_head *pool);
+int erofs_rsvpool_init(void);
+void erofs_rsvpool_exit(void);
 
 #ifdef CONFIG_EROFS_FS_ZIP
 int erofs_workgroup_put(struct erofs_workgroup *grp);

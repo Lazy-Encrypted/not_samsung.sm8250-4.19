@@ -248,11 +248,18 @@ void z_erofs_exit_zip_subsystem(void)
 	erofs_destroy_percpu_workers();
 	destroy_workqueue(z_erofs_workqueue);
 	z_erofs_destroy_pcluster_pool();
+	erofs_rsvpool_exit();
 }
 
 int __init z_erofs_init_zip_subsystem(void)
 {
-	int err = z_erofs_create_pcluster_pool();
+	int err;
+
+	err = erofs_rsvpool_init();
+	if (err)
+		goto out_error_rsvpool;
+
+	err = z_erofs_create_pcluster_pool();
 
 	if (err)
 		goto out_error_pcluster_pool;
@@ -280,6 +287,8 @@ out_error_pcpu_worker:
 out_error_workqueue_init:
 	z_erofs_destroy_pcluster_pool();
 out_error_pcluster_pool:
+	erofs_rsvpool_exit();
+out_error_rsvpool:
 	return err;
 }
 
@@ -1207,7 +1216,7 @@ static void z_erofs_decompressqueue_work(struct work_struct *work)
 	DBG_BUGON(bgq->head == Z_EROFS_PCLUSTER_TAIL_CLOSED);
 	z_erofs_decompress_queue(bgq, &pagepool);
 
-	put_pages_list(&pagepool);
+	erofs_release_pages(&pagepool);
 	kvfree(bgq);
 }
 
@@ -1544,7 +1553,7 @@ static int z_erofs_readpage(struct file *file, struct page *page)
 		put_page(f.map.mpage);
 
 	/* clean up the remaining free pages */
-	put_pages_list(&pagepool);
+	erofs_release_pages(&pagepool);
 	return err;
 }
 
@@ -1611,7 +1620,7 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 		put_page(f.map.mpage);
 
 	/* clean up the remaining free pages */
-	put_pages_list(&pagepool);
+	erofs_release_pages(&pagepool);
 	return 0;
 }
 

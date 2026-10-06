@@ -6,18 +6,86 @@
 #include "internal.h"
 #include <linux/pagevec.h>
 
-struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp)
+#define EROFS_RESERVED_PAGES_DEFAULT	64
+
+static struct page **erofs_rsv_pages;
+static unsigned int erofs_rsv_nrpages = EROFS_RESERVED_PAGES_DEFAULT;
+static unsigned int erofs_rsv_count;
+static DEFINE_SPINLOCK(erofs_rsv_lock);
+
+module_param_named(reserved_pages, erofs_rsv_nrpages, uint, 0444);
+
+struct page *__erofs_allocpage(struct list_head *pool, gfp_t gfp,
+			       bool tryrsv)
 {
-	struct page *page;
+	struct page *page = NULL;
 
 	if (!list_empty(pool)) {
 		page = lru_to_page(pool);
 		DBG_BUGON(page_ref_count(page) != 1);
 		list_del(&page->lru);
-	} else {
-		page = alloc_page(gfp);
+	} else if (tryrsv && erofs_rsv_pages) {
+		spin_lock(&erofs_rsv_lock);
+		if (erofs_rsv_count)
+			page = erofs_rsv_pages[--erofs_rsv_count];
+		spin_unlock(&erofs_rsv_lock);
 	}
+
+	if (!page)
+		page = alloc_page(gfp);
+
+	DBG_BUGON(page && page_ref_count(page) != 1);
 	return page;
+}
+
+void erofs_release_pages(struct list_head *pool)
+{
+	while (!list_empty(pool)) {
+		struct page *page = lru_to_page(pool);
+
+		list_del(&page->lru);
+
+		spin_lock(&erofs_rsv_lock);
+		if (erofs_rsv_pages &&
+		    erofs_rsv_count < erofs_rsv_nrpages) {
+			erofs_rsv_pages[erofs_rsv_count++] = page;
+			spin_unlock(&erofs_rsv_lock);
+			continue;
+		}
+		spin_unlock(&erofs_rsv_lock);
+
+		put_page(page);
+	}
+}
+
+int erofs_rsvpool_init(void)
+{
+	if (!erofs_rsv_nrpages)
+		return 0;
+
+	erofs_rsv_pages = kcalloc(erofs_rsv_nrpages,
+				  sizeof(*erofs_rsv_pages), GFP_KERNEL);
+	if (!erofs_rsv_pages) {
+		erofs_rsv_nrpages = 0;
+		return 0;
+	}
+
+	return 0;
+}
+
+void erofs_rsvpool_exit(void)
+{
+	unsigned int i;
+
+	if (!erofs_rsv_pages)
+		return;
+
+	for (i = 0; i < erofs_rsv_count; ++i)
+		put_page(erofs_rsv_pages[i]);
+
+	kfree(erofs_rsv_pages);
+	erofs_rsv_pages = NULL;
+	erofs_rsv_count = 0;
 }
 
 #ifdef CONFIG_EROFS_FS_ZIP
