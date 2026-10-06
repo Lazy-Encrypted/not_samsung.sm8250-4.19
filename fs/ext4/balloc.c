@@ -653,7 +653,7 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
 		return 0;
 
 	smp_mb();
-	if (EXT4_SB(sb)->s_mb_free_pending == 0)
+	if (atomic_read(&EXT4_SB(sb)->s_mb_free_pending) == 0)
 		return 0;
 
 	jbd_debug(1, "%s: retrying operation after ENOSPC\n", sb->s_id);
