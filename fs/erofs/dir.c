@@ -85,6 +85,9 @@ static int erofs_readdir(struct file *f, struct dir_context *ctx)
 	const size_t dirsize = i_size_read(dir);
 	unsigned int i = ctx->pos / EROFS_BLKSIZ;
 	unsigned int ofs = ctx->pos % EROFS_BLKSIZ;
+	struct file_ra_state *ra = &f->f_ra;
+	unsigned long nr_pages = DIV_ROUND_UP(dirsize, PAGE_SIZE);
+	const unsigned long ra_pages = DIV_ROUND_UP(16384UL, PAGE_SIZE);
 	int err = 0;
 	bool initial = true;
 
@@ -92,6 +95,15 @@ static int erofs_readdir(struct file *f, struct dir_context *ctx)
 		struct page *dentry_page;
 		struct erofs_dirent *de;
 		unsigned int nameoff, maxsize;
+
+		/* readahead blocks to enhance performance in large directories */
+		if (ra_pages) {
+			unsigned long idx = ctx->pos >> PAGE_SHIFT;
+			unsigned long pages = min(nr_pages - idx, ra_pages);
+
+			if (pages > 1 && !ra_has_index(ra, idx))
+				page_cache_sync_readahead(mapping, ra, f, idx, pages);
+		}
 
 		dentry_page = read_mapping_page(mapping, i, NULL);
 		if (dentry_page == ERR_PTR(-ENOMEM)) {
