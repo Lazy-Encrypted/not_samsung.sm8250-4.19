@@ -49,10 +49,10 @@ static int init_inode_xattrs(struct inode *inode)
 	/* the most case is that xattrs of this inode are initialized. */
 	if (test_bit(EROFS_I_EA_INITED_BIT, &vi->flags)) {
 		/*
-		 * paired with smp_mb() at the end of the function to ensure
+		 * paired with smp_wmb() at the end of the function to ensure
 		 * fields will only be observed after the bit is set.
 		 */
-		smp_mb();
+		smp_rmb();
 		return 0;
 	}
 
@@ -142,8 +142,8 @@ static int init_inode_xattrs(struct inode *inode)
 	}
 	xattr_iter_end(&it, atomic_map);
 
-	/* paired with smp_mb() at the beginning of the function. */
-	smp_mb();
+	/* paired with smp_rmb() at the beginning of the function. */
+	smp_wmb();
 	set_bit(EROFS_I_EA_INITED_BIT, &vi->flags);
 
 out_unlock:

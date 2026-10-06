@@ -36,10 +36,10 @@ static int z_erofs_fill_inode_lazy(struct inode *inode)
 
 	if (test_bit(EROFS_I_Z_INITED_BIT, &vi->flags)) {
 		/*
-		 * paired with smp_mb() at the end of the function to ensure
+		 * paired with smp_wmb() at the end of the function to ensure
 		 * fields will only be observed after the bit is set.
 		 */
-		smp_mb();
+		smp_rmb();
 		return 0;
 	}
 
@@ -92,8 +92,8 @@ static int z_erofs_fill_inode_lazy(struct inode *inode)
 		err = -EFSCORRUPTED;
 		goto unmap_done;
 	}
-	/* paired with smp_mb() at the beginning of the function */
-	smp_mb();
+	/* paired with smp_rmb() at the beginning of the function */
+	smp_wmb();
 	set_bit(EROFS_I_Z_INITED_BIT, &vi->flags);
 unmap_done:
 	kunmap_atomic(kaddr);
