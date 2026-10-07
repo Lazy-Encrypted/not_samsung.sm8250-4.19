@@ -1470,7 +1470,7 @@ alloc:
 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO) {
 		invalidate_mapping_pages(META_MAPPING(sbi),
 					old_blkaddr, old_blkaddr);
-		f2fs_invalidate_compress_page(sbi, old_blkaddr);
+		f2fs_invalidate_compress_page(sbi, old_blkaddr, 1);
 	}
 	f2fs_update_data_blkaddr(dn, dn->data_blkaddr);
 
