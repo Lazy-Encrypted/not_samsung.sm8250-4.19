@@ -2375,7 +2375,7 @@ submit_and_realloc:
 		}
 
 		if (!bio) {
-			bio = f2fs_grab_read_bio(inode, blkaddr, nr_pages,
+			bio = f2fs_grab_read_bio(inode, blkaddr, nr_pages - i,
 					is_readahead ? REQ_RAHEAD : 0,
 					page->index, for_write);
 			if (IS_ERR(bio)) {
@@ -2455,6 +2455,17 @@ int f2fs_mpage_readpages(struct address_space *mapping,
 #endif
 	unsigned max_nr_pages = nr_pages;
 	int ret = 0;
+
+#ifdef CONFIG_F2FS_FS_COMPRESSION
+	if (f2fs_compressed_file(inode)) {
+		pgoff_t index = pages ?
+			list_last_entry(pages, struct page, lru)->index :
+			page->index;
+
+		max_nr_pages = round_up(index + nr_pages, cc.cluster_size) -
+				round_down(index, cc.cluster_size);
+	}
+#endif
 	bool drop_ra = false;
 
 	/* this is real from f2fs_merkle_tree_readahead() in old kernel only. */
