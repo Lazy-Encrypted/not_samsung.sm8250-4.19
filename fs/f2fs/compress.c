@@ -1283,7 +1283,7 @@ static int f2fs_write_compressed_pages(struct compress_ctx *cc,
 			if (blkaddr == COMPRESS_ADDR)
 				fio.compr_blocks++;
 			if (__is_valid_data_blkaddr(blkaddr))
-				f2fs_invalidate_blocks(sbi, blkaddr, 1);
+				f2fs_invalidate_blocks(sbi, blkaddr);
 			f2fs_update_data_blkaddr(&dn, COMPRESS_ADDR);
 			goto unlock_continue;
 		}
@@ -1293,7 +1293,7 @@ static int f2fs_write_compressed_pages(struct compress_ctx *cc,
 
 		if (i > cc->valid_nr_cpages) {
 			if (__is_valid_data_blkaddr(blkaddr)) {
-				f2fs_invalidate_blocks(sbi, blkaddr, 1);
+				f2fs_invalidate_blocks(sbi, blkaddr);
 				f2fs_update_data_blkaddr(&dn, NEW_ADDR);
 			}
 			goto unlock_continue;
@@ -1790,15 +1790,11 @@ struct address_space *COMPRESS_MAPPING(struct f2fs_sb_info *sbi)
 	return sbi->compress_inode->i_mapping;
 }
 
-void f2fs_invalidate_compress_page(struct f2fs_sb_info *sbi,
-					block_t blkaddr, unsigned int len)
+void f2fs_invalidate_compress_page(struct f2fs_sb_info *sbi, block_t blkaddr)
 {
-	block_t end = blkaddr + len - 1;
-
 	if (!sbi->compress_inode)
 		return;
-
-	invalidate_mapping_pages(COMPRESS_MAPPING(sbi), blkaddr, end);
+	invalidate_mapping_pages(COMPRESS_MAPPING(sbi), blkaddr, blkaddr);
 }
 
 void f2fs_cache_compressed_page(struct f2fs_sb_info *sbi, struct page *page,
