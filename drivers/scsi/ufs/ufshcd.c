@@ -2529,6 +2529,7 @@ static int ufshcd_devfreq_init(struct ufs_hba *hba)
 	dev_pm_opp_add(hba->dev, clki->max_freq, 0);
 
 	scaling->profile.polling_ms = 40;
+	scaling->profile.timer = DEVFREQ_TIMER_DELAYED;
 	scaling->profile.target = ufshcd_devfreq_target;
 	scaling->profile.get_dev_status = ufshcd_devfreq_get_dev_status;
 
