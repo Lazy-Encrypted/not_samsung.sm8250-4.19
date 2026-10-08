@@ -66,6 +66,9 @@ struct z_erofs_pcluster {
 	/* L: whether extra buffer allocations are best-effort */
 	bool besteffort;
 
+	/* I: whether pcluster is not registered in workgroup */
+	bool anon;
+
 	/* I: physical cluster size in pages */
 	unsigned short pclusterpages;
 

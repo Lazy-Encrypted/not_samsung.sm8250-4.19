@@ -638,6 +638,13 @@ static int z_erofs_register_collection(struct z_erofs_collector *clt,
 	else
 		pcl->algorithmformat = Z_EROFS_COMPRESSION_SHIFTED;
 
+	/*
+	 * With cache disabled, this pcluster doesn't need to be kept
+	 * in the global workgroup tree.
+	 */
+	pcl->anon = READ_ONCE(EROFS_SB(inode->i_sb)->cache_strategy) <=
+		EROFS_ZIP_CACHE_DISABLED;
+
 	/* new pclusters should be claimed as type 1, primary and followed */
 	pcl->next = clt->owned_head;
 	clt->mode = COLLECT_PRIMARY_FOLLOWED;
@@ -652,11 +659,13 @@ static int z_erofs_register_collection(struct z_erofs_collector *clt,
 	mutex_init(&cl->lock);
 	DBG_BUGON(!mutex_trylock(&cl->lock));
 
-	err = erofs_register_workgroup(inode->i_sb, &pcl->obj);
-	if (err) {
-		mutex_unlock(&cl->lock);
-		z_erofs_free_pcluster(pcl);
-		return -EAGAIN;
+	if (!pcl->anon) {
+		err = erofs_register_workgroup(inode->i_sb, &pcl->obj);
+		if (err) {
+			mutex_unlock(&cl->lock);
+			z_erofs_free_pcluster(pcl);
+			return -EAGAIN;
+		}
 	}
 	/* used to check tail merging loop due to corrupted images */
 	if (clt->owned_head == Z_EROFS_PCLUSTER_TAIL)
@@ -671,6 +680,7 @@ static int z_erofs_collector_begin(struct z_erofs_collector *clt,
 				   struct inode *inode,
 				   struct erofs_map_blocks *map)
 {
+	struct erofs_sb_info *const sbi = EROFS_SB(inode->i_sb);
 	int ret;
 
 	DBG_BUGON(clt->cl);
@@ -685,15 +695,19 @@ static int z_erofs_collector_begin(struct z_erofs_collector *clt,
 	}
 
 repeat:
-	ret = z_erofs_lookup_collection(clt, inode, map);
-	if (ret == -ENOENT) {
-		ret = z_erofs_register_collection(clt, inode, map);
+	if (READ_ONCE(sbi->cache_strategy) > EROFS_ZIP_CACHE_DISABLED) {
+		ret = z_erofs_lookup_collection(clt, inode, map);
+		if (ret == -ENOENT) {
+			ret = z_erofs_register_collection(clt, inode, map);
 
-		/* someone registered at the same time, give another try */
-		if (ret == -EAGAIN) {
-			cond_resched();
-			goto repeat;
+			/* someone registered at the same time, give another try */
+			if (ret == -EAGAIN) {
+				cond_resched();
+				goto repeat;
+			}
 		}
+	} else {
+		ret = z_erofs_register_collection(clt, inode, map);
 	}
 
 	if (ret)
@@ -734,7 +748,10 @@ static void z_erofs_collection_put(struct z_erofs_collection *cl)
 	struct z_erofs_pcluster *const pcl =
 		container_of(cl, struct z_erofs_pcluster, primary_collection);
 
-	erofs_workgroup_put(&pcl->obj);
+	if (pcl->anon)
+		z_erofs_free_pcluster(pcl);
+	else
+		erofs_workgroup_put(&pcl->obj);
 }
 
 static bool z_erofs_collector_end(struct z_erofs_collector *clt)
@@ -826,13 +843,15 @@ restart_now:
 	clt->pcl->besteffort |= !ra;
 
 	/* preload all compressed pages (maybe downgrade role if necessary) */
-	if (should_alloc_managed_pages(fe, sbi->cache_strategy, map->m_la))
-		cache_strategy = TRYALLOC;
-	else
-		cache_strategy = DONTALLOC;
+	if (!clt->pcl->anon) {
+		if (should_alloc_managed_pages(fe, sbi->cache_strategy, map->m_la))
+			cache_strategy = TRYALLOC;
+		else
+			cache_strategy = DONTALLOC;
 
-	preload_compressed_pages(clt, MNGD_MAPPING(sbi),
-				 cache_strategy, pagepool);
+		preload_compressed_pages(clt, MNGD_MAPPING(sbi),
+					 cache_strategy, pagepool);
+	}
 
 hitted:
 	/*
