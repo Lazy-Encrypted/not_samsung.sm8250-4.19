@@ -3519,9 +3519,8 @@ static void ufshcd_init_hibern8(struct ufs_hba *hba)
 		return;
 
 	if (ufshcd_is_auto_hibern8_supported(hba)) {
-		/* Set the default auto-hiberate idle timer value to 10 ms */
-		hba->ahit = FIELD_PREP(UFSHCI_AHIBERN8_TIMER_MASK, 10) |
-			    FIELD_PREP(UFSHCI_AHIBERN8_SCALE_MASK, 3);
+		/* Disable Auto-Hibern8 by default. */
+		hba->ahit = 0;
 		h8->state = AUTO_HIBERN8;
 		/*
 		 * Disable SW hibern8 enter on idle in case
