@@ -1648,6 +1648,8 @@ struct f2fs_sb_info {
 	struct f2fs_sm_info *sm_info;		/* segment manager */
 
 	/* for bio operations */
+	/* Largest write bio size completed in atomic context (atc). */
+	u32 max_atc_write_bio_size;
 	struct f2fs_bio_info *write_io[NR_PAGE_TYPE];	/* for write bios */
 	/* keep migration IO order for LFS mode */
 	struct f2fs_rwsem io_order_lock;
@@ -1834,7 +1836,7 @@ struct f2fs_sb_info {
 	/* Precomputed FS UUID checksum for seeding other checksums */
 	__u32 s_chksum_seed;
 
-	struct workqueue_struct *post_read_wq;	/* post read workqueue */
+	struct workqueue_struct *wq;		/* bio completion workqueue */
 
 	unsigned char errors[MAX_F2FS_ERRORS];	/* error flags */
 	spinlock_t error_lock;			/* protect errors array */
@@ -3874,8 +3876,8 @@ bool f2fs_overwrite_io(struct inode *inode, loff_t pos, size_t len);
 void f2fs_clear_page_cache_dirty_tag(struct page *page);
 int f2fs_init_post_read_processing(void);
 void f2fs_destroy_post_read_processing(void);
-int f2fs_init_post_read_wq(struct f2fs_sb_info *sbi);
-void f2fs_destroy_post_read_wq(struct f2fs_sb_info *sbi);
+int f2fs_init_wq(struct f2fs_sb_info *sbi);
+void f2fs_destroy_wq(struct f2fs_sb_info *sbi);
 
 /*
  * gc.c

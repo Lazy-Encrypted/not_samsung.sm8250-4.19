@@ -33,12 +33,18 @@ static struct kmem_cache *bio_entry_slab;
 static mempool_t *bio_post_read_ctx_pool;
 static struct bio_set f2fs_bioset;
 
+struct f2fs_bio {
+	struct work_struct work;
+	struct bio bio;
+};
+
 #define	F2FS_BIO_POOL_SIZE	NR_CURSEG_TYPE
 
 int __init f2fs_init_bioset(void)
 {
 	return bioset_init(&f2fs_bioset, F2FS_BIO_POOL_SIZE,
-					0, BIOSET_NEED_BVECS);
+					offsetof(struct f2fs_bio, bio),
+					BIOSET_NEED_BVECS);
 }
 
 void f2fs_destroy_bioset(void)
@@ -297,7 +303,7 @@ static void f2fs_read_end_io(struct bio *bio)
 			f2fs_handle_step_decompress(ctx, intask);
 		} else if (enabled_steps) {
 			INIT_WORK(&ctx->work, f2fs_post_read_work);
-			queue_work(ctx->sbi->post_read_wq, &ctx->work);
+			queue_work(ctx->sbi->wq, &ctx->work);
 			return;
 		}
 	}
@@ -305,14 +311,11 @@ static void f2fs_read_end_io(struct bio *bio)
 	f2fs_verify_and_finish_bio(bio, intask);
 }
 
-static void f2fs_write_end_io(struct bio *bio)
+static void f2fs_write_end_bio(struct bio *bio)
 {
-	struct f2fs_sb_info *sbi;
+	struct f2fs_sb_info *sbi = bio->bi_private;
 	struct bio_vec *bvec;
 	int iter_all;
-
-	iostat_update_and_unbind_ctx(bio, 1);
-	sbi = bio->bi_private;
 
 	if (time_to_inject(sbi, FAULT_WRITE_IO)) {
 		f2fs_show_injection_info(sbi, FAULT_WRITE_IO);
@@ -370,6 +373,33 @@ static void f2fs_write_end_io(struct bio *bio)
 	}
 
 	bio_put(bio);
+}
+
+static void f2fs_write_end_io_work(struct work_struct *work)
+{
+	struct bio *bio =
+		&container_of(work, struct f2fs_bio, work)->bio;
+
+	f2fs_write_end_bio(bio);
+}
+
+static void f2fs_write_end_io(struct bio *bio)
+{
+	struct f2fs_sb_info *sbi;
+
+	iostat_update_and_unbind_ctx(bio, 1);
+	sbi = bio->bi_private;
+
+	if (in_atomic() &&
+		bio->bi_iter.bi_size > sbi->max_atc_write_bio_size) {
+		struct work_struct *w;
+
+		w = &container_of(bio, struct f2fs_bio, bio)->work;
+		INIT_WORK(w, f2fs_write_end_io_work);
+		queue_work(sbi->wq, w);
+	} else {
+		f2fs_write_end_bio(bio);
+	}
 }
 
 struct block_device *f2fs_target_device(struct f2fs_sb_info *sbi,
@@ -4425,23 +4455,18 @@ void f2fs_destroy_post_read_processing(void)
 	kmem_cache_destroy(bio_post_read_ctx_cache);
 }
 
-int f2fs_init_post_read_wq(struct f2fs_sb_info *sbi)
+int f2fs_init_wq(struct f2fs_sb_info *sbi)
 {
-	if (!f2fs_sb_has_encrypt(sbi) &&
-		!f2fs_sb_has_verity(sbi) &&
-		!f2fs_sb_has_compression(sbi))
-		return 0;
-
-	sbi->post_read_wq = alloc_workqueue("f2fs_post_read_wq",
+	sbi->wq = alloc_workqueue("f2fs_wq",
 						 WQ_UNBOUND | WQ_HIGHPRI,
 						 num_online_cpus());
-	return sbi->post_read_wq ? 0 : -ENOMEM;
+	return sbi->wq ? 0 : -ENOMEM;
 }
 
-void f2fs_destroy_post_read_wq(struct f2fs_sb_info *sbi)
+void f2fs_destroy_wq(struct f2fs_sb_info *sbi)
 {
-	if (sbi->post_read_wq)
-		destroy_workqueue(sbi->post_read_wq);
+	if (sbi->wq)
+		destroy_workqueue(sbi->wq);
 }
 
 int __init f2fs_init_bio_entry_cache(void)
