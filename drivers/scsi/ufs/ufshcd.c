@@ -1060,8 +1060,8 @@ void SEC_ufs_hpb_rb_count(struct ufs_hba *hba, struct ufshpb_region *rgn)
 
 #if IS_ENABLED(CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND)
 static struct devfreq_simple_ondemand_data ufshcd_ondemand_data = {
-	.upthreshold = 70,
-	.downdifferential = 65,
+	.upthreshold = 35,
+	.downdifferential = 30,
 	.simple_scaling = 1,
 };
 
@@ -2528,7 +2528,7 @@ static int ufshcd_devfreq_init(struct ufs_hba *hba)
 	dev_pm_opp_add(hba->dev, clki->min_freq, 0);
 	dev_pm_opp_add(hba->dev, clki->max_freq, 0);
 
-	scaling->profile.polling_ms = 60;
+	scaling->profile.polling_ms = 40;
 	scaling->profile.target = ufshcd_devfreq_target;
 	scaling->profile.get_dev_status = ufshcd_devfreq_get_dev_status;
 
