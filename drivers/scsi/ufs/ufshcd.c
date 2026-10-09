@@ -2041,8 +2041,10 @@ static int ufshcd_set_clk_freq(struct ufs_hba *hba, bool scale_up)
 				clki->curr_freq = clki->min_freq;
 			}
 		}
-		dev_dbg(hba->dev, "%s: clk: %s, rate: %lu\n", __func__,
-				clki->name, clk_get_rate(clki->clk));
+		dev_info(hba->dev,
+                "UFS_FREQ_DEBUG: name=%s curr=%lu min=%lu max=%lu actual=%lu\n",
+                clki->name, clki->curr_freq, clki->min_freq,
+                clki->max_freq, clk_get_rate(clki->clk));
 	}
 
 out:
