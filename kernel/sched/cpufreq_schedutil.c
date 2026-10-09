@@ -11,6 +11,7 @@
 #include "sched.h"
 
 #include <linux/sched/cpufreq.h>
+#include <linux/tick.h>
 #include <trace/events/power.h>
 
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
@@ -62,11 +63,51 @@ struct sugov_cpu {
 
 	unsigned long		util;
 	unsigned long		bw_min;
+#ifdef CONFIG_NO_HZ_COMMON
+	unsigned long           saved_idle_calls;
+#endif
 };
 
 static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
 
+#ifdef CONFIG_NO_HZ_COMMON
+static bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
+{
+        struct rq *rq = cpu_rq(sg_cpu->cpu);
+        unsigned long idle_calls;
+        unsigned long rq_util, max_util;
+        bool ret;
+
+        /* Do not hold frequency when UCLAMP_MAX caps the runqueue. */
+        if (uclamp_is_used()) {
+                rq_util = cpu_util_cfs(rq) + cpu_util_rt(rq);
+                max_util = uclamp_rq_get(rq, UCLAMP_MAX);
+
+                if (max_util != SCHED_CAPACITY_SCALE &&
+                    rq_util >= max_util)
+                        return false;
+        }
+
+        idle_calls = tick_nohz_get_idle_calls_cpu(sg_cpu->cpu);
+        ret = idle_calls == sg_cpu->saved_idle_calls;
+        sg_cpu->saved_idle_calls = idle_calls;
+
+        return ret;
+}
+#else
+static inline bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
+{
+        return false;
+}
+#endif
+
 /************************ Governor internals ***********************/
+
+static void sugov_update_rate_limit_us(struct sugov_policy *sg_policy)
+{
+        sg_policy->freq_update_delay_ns =
+                (s64)sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
+}
 
 static bool sugov_should_rate_limit(struct sugov_policy *sg_policy, u64 time)
 {
@@ -626,6 +667,7 @@ static void sugov_update_single_freq(struct update_util_data *hook, u64 time,
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
+	unsigned int cached_freq = sg_policy->cached_raw_freq;
 	unsigned long max_cap;
 	unsigned int next_f;
 
@@ -635,6 +677,14 @@ static void sugov_update_single_freq(struct update_util_data *hook, u64 time,
 		return;
 
 	next_f = get_next_freq(sg_policy, sg_cpu->util, max_cap);
+
+	if (sugov_hold_freq(sg_cpu) &&
+	    next_f < sg_policy->next_freq &&
+	    !sg_policy->need_freq_update) {
+		next_f = sg_policy->next_freq;
+		/* Restore the raw-frequency cache after holding the old target. */
+		sg_policy->cached_raw_freq = cached_freq;
+	}
 
 	if (!sugov_update_next_freq(sg_policy, time, next_f))
 		return;
@@ -657,6 +707,8 @@ static void sugov_update_single_perf(struct update_util_data *hook, u64 time,
 				     unsigned int flags)
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
+	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
+	unsigned long prev_util = sg_cpu->util;
 	unsigned long max_cap;
 
 	/*
@@ -674,10 +726,14 @@ static void sugov_update_single_perf(struct update_util_data *hook, u64 time,
 	if (!sugov_update_single_common(sg_cpu, time, max_cap, flags))
 		return;
 
-	cpufreq_driver_adjust_perf(sg_cpu->cpu, sg_cpu->bw_min,
-				   sg_cpu->util, max_cap);
+	if (sugov_hold_freq(sg_cpu) && sg_cpu->util < prev_util)
+		sg_cpu->util = prev_util;
 
-	sg_cpu->sg_policy->last_freq_update_time = time;
+	cpufreq_driver_adjust_perf(sg_cpu->cpu, sg_cpu->bw_min,
+	                           sg_cpu->util, max_cap);
+
+	sg_policy->need_freq_update = false;
+	sg_policy->last_freq_update_time = time;
 }
 
 static unsigned int sugov_next_freq_shared(struct sugov_cpu *sg_cpu, u64 time)
@@ -786,7 +842,19 @@ static ssize_t rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
 static ssize_t
 rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count)
 {
-	return count;
+        struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+        struct sugov_policy *sg_policy;
+        unsigned int rate_limit_us;
+
+        if (kstrtouint(buf, 10, &rate_limit_us))
+                return -EINVAL;
+
+        tunables->rate_limit_us = rate_limit_us;
+
+        list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
+                sugov_update_rate_limit_us(sg_policy);
+
+        return count;
 }
 
 static struct governor_attr rate_limit_us = __ATTR_RW(rate_limit_us);
@@ -805,7 +873,7 @@ response_time_ms_store(struct gov_attr_set *attr_set, const char *buf, size_t co
 	struct sugov_policy *sg_policy;
 	unsigned int response_time_ms;
 
-	if (kstrtouint(buf, 10, &response_time_ms))
+	if (kstrtouint(buf, 10, &response_time_ms) || !response_time_ms)
 		return -EINVAL;
 
 	/* XXX need special handling for high values? */
@@ -815,7 +883,7 @@ response_time_ms_store(struct gov_attr_set *attr_set, const char *buf, size_t co
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
 		if (sg_policy->tunables == tunables) {
 			sugov_update_response_time_mult(sg_policy);
-			break;
+			/* Atualizar todas as políticas associadas. */
 		}
 	}
 
@@ -1058,7 +1126,7 @@ static int sugov_start(struct cpufreq_policy *policy)
 	void (*uu)(struct update_util_data *data, u64 time, unsigned int flags);
 	unsigned int cpu;
 
-	sg_policy->freq_update_delay_ns		= sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
+	sugov_update_rate_limit_us(sg_policy);
 	sg_policy->last_freq_update_time	= 0;
 	sg_policy->next_freq			= 0;
 	sg_policy->work_in_progress		= false;
