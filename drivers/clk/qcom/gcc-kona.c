@@ -4422,11 +4422,31 @@ static int gcc_kona_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	dev_info(&pdev->dev,
-		"GCC_PLL_DEBUG: gpll0=%lu gpll0_even=%lu gpll9=%lu\\n",
-		clk_hw_get_rate(&gpll0.clkr.hw),
-		clk_hw_get_rate(&gpll0_out_even.clkr.hw),
-		clk_hw_get_rate(&gpll9.clkr.hw));
+   {
+        u32 gpll0_l = 0, gpll0_alpha = 0;
+        u32 gpll9_l = 0, gpll9_alpha = 0;
+        int r0_l, r0_alpha, r9_l, r9_alpha;
+
+        r0_l = regmap_read(regmap,
+                gpll0.offset + gpll0.regs[PLL_OFF_L_VAL],
+                &gpll0_l);
+        r0_alpha = regmap_read(regmap,
+                gpll0.offset + gpll0.regs[PLL_OFF_ALPHA_VAL],
+                &gpll0_alpha);
+        r9_l = regmap_read(regmap,
+                gpll9.offset + gpll9.regs[PLL_OFF_L_VAL],
+                &gpll9_l);
+        r9_alpha = regmap_read(regmap,
+                gpll9.offset + gpll9.regs[PLL_OFF_ALPHA_VAL],
+                &gpll9_alpha);
+
+        dev_info(&pdev->dev,
+                "GCC_PLL_REG_DEBUG: gpll0 L(ret=%d)=%u "
+                "alpha(ret=%d)=0x%08x; gpll9 L(ret=%d)=%u "
+                "alpha(ret=%d)=0x%08x\n",
+                r0_l, gpll0_l, r0_alpha, gpll0_alpha,
+                r9_l, gpll9_l, r9_alpha, gpll9_alpha);
+    }
 	dev_info(&pdev->dev, "Registered GCC clocks\n");
 	return ret;
 }
