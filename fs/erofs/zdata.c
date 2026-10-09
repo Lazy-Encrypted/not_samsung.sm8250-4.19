@@ -146,15 +146,17 @@ static void erofs_destroy_percpu_workers(void)
 
 static struct kthread_worker *erofs_init_percpu_worker(int cpu)
 {
-	static const struct sched_param sched_zero_prio;
+	static const struct sched_param sched_fifo_low_prio = {
+		.sched_priority = 1,
+	};
 	struct kthread_worker *worker =
 		kthread_create_worker_on_cpu(cpu, 0, "erofs_worker/%u", cpu);
 
 	if (IS_ERR(worker))
 		return worker;
 	if (IS_ENABLED(CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI))
-		sched_setscheduler_nocheck(worker->task, SCHED_FIFO, &sched_zero_prio);
-		//sched_set_fifo_low(worker->task);
+		sched_setscheduler_nocheck(worker->task, SCHED_FIFO,
+						   &sched_fifo_low_prio);
 	return worker;
 }
 
