@@ -599,16 +599,6 @@ static int ufs_qcom_set_dme_vs_core_clk_ctrl_max_freq_mode(struct ufs_hba *hba)
 	}
 
 	switch (max_freq) {
-        case 333333333:
-                /*
-                 * Experimental 333.333 MHz UFS overclock.
-                 * ceil(333333333 Hz / 1 MHz) = 334 cycles/us.
-                 * The 13-cycle 40 ns setting is provisional and
-                 * requires validation on the target hardware.
-                 */
-                err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(
-                                hba, 334, 13);
-                break;
 	case 300000000:
 		err = ufs_qcom_set_dme_vs_core_clk_ctrl_clear_div(hba, 300, 12);
 		break;

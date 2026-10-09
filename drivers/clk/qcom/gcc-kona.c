@@ -1276,6 +1276,7 @@ static const struct freq_tbl ftbl_gcc_ufs_phy_axi_clk_src[] = {
 	F(75000000, P_GPLL0_OUT_EVEN, 4, 0, 0),
 	F(150000000, P_GPLL0_OUT_MAIN, 4, 0, 0),
 	F(300000000, P_GPLL0_OUT_MAIN, 2, 0, 0),
+   F(333333333, P_GPLL0_OUT_MAIN, 1, 5, 9),
 	{ }
 };
 
@@ -1299,7 +1300,8 @@ static struct clk_rcg2 gcc_ufs_phy_axi_clk_src = {
 			[VDD_MIN] = 37500000,
 			[VDD_LOWER] = 75000000,
 			[VDD_LOW] = 150000000,
-			[VDD_NOMINAL] = 300000000},
+			[VDD_NOMINAL] = 300000000,
+                       [VDD_HIGH] = 333333333},
 	},
 };
 
@@ -4422,31 +4424,6 @@ static int gcc_kona_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-   {
-        u32 gpll0_l = 0, gpll0_alpha = 0;
-        u32 gpll9_l = 0, gpll9_alpha = 0;
-        int r0_l, r0_alpha, r9_l, r9_alpha;
-
-        r0_l = regmap_read(regmap,
-                gpll0.offset + gpll0.regs[PLL_OFF_L_VAL],
-                &gpll0_l);
-        r0_alpha = regmap_read(regmap,
-                gpll0.offset + gpll0.regs[PLL_OFF_ALPHA_VAL],
-                &gpll0_alpha);
-        r9_l = regmap_read(regmap,
-                gpll9.offset + gpll9.regs[PLL_OFF_L_VAL],
-                &gpll9_l);
-        r9_alpha = regmap_read(regmap,
-                gpll9.offset + gpll9.regs[PLL_OFF_ALPHA_VAL],
-                &gpll9_alpha);
-
-        dev_info(&pdev->dev,
-                "GCC_PLL_REG_DEBUG: gpll0 L(ret=%d)=%u "
-                "alpha(ret=%d)=0x%08x; gpll9 L(ret=%d)=%u "
-                "alpha(ret=%d)=0x%08x\n",
-                r0_l, gpll0_l, r0_alpha, gpll0_alpha,
-                r9_l, gpll9_l, r9_alpha, gpll9_alpha);
-    }
 	dev_info(&pdev->dev, "Registered GCC clocks\n");
 	return ret;
 }
