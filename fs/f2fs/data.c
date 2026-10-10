@@ -3506,6 +3506,16 @@ static int prepare_write_begin(struct f2fs_sb_info *sbi,
 	int err = 0;
 	int flag;
 
+	/* Skip inode node lookup for cached buffered overwrites. */
+	if (!f2fs_has_inline_data(inode) &&
+	    !f2fs_compressed_file(inode) &&
+	    (pos & PAGE_MASK) < i_size_read(inode) &&
+	    f2fs_lookup_read_extent_cache(inode, index, &ei)) {
+		*blk_addr = ei.blk + index - ei.fofs;
+		*node_changed = false;
+		return 0;
+	}
+
 	/*
 	 * If a whole page is being written and we already preallocated all the
 	 * blocks, then there is no need to get a block address now.
