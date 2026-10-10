@@ -11,7 +11,6 @@
 #include "sched.h"
 
 #include <linux/sched/cpufreq.h>
-#include <linux/tick.h>
 #include <trace/events/power.h>
 
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
@@ -63,43 +62,9 @@ struct sugov_cpu {
 
 	unsigned long		util;
 	unsigned long		bw_min;
-#ifdef CONFIG_NO_HZ_COMMON
-	unsigned long           saved_idle_calls;
-#endif
 };
 
 static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
-
-#ifdef CONFIG_NO_HZ_COMMON
-static bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
-{
-        struct rq *rq = cpu_rq(sg_cpu->cpu);
-        unsigned long idle_calls;
-        unsigned long rq_util, max_util;
-        bool ret;
-
-        /* Do not hold frequency when UCLAMP_MAX caps the runqueue. */
-        if (uclamp_is_used()) {
-                rq_util = cpu_util_cfs(rq) + cpu_util_rt(rq);
-                max_util = uclamp_rq_get(rq, UCLAMP_MAX);
-
-                if (max_util != SCHED_CAPACITY_SCALE &&
-                    rq_util >= max_util)
-                        return false;
-        }
-
-        idle_calls = tick_nohz_get_idle_calls_cpu(sg_cpu->cpu);
-        ret = idle_calls == sg_cpu->saved_idle_calls;
-        sg_cpu->saved_idle_calls = idle_calls;
-
-        return ret;
-}
-#else
-static inline bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
-{
-        return false;
-}
-#endif
 
 /************************ Governor internals ***********************/
 
@@ -667,7 +632,6 @@ static void sugov_update_single_freq(struct update_util_data *hook, u64 time,
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
-	unsigned int cached_freq = sg_policy->cached_raw_freq;
 	unsigned long max_cap;
 	unsigned int next_f;
 
@@ -677,14 +641,6 @@ static void sugov_update_single_freq(struct update_util_data *hook, u64 time,
 		return;
 
 	next_f = get_next_freq(sg_policy, sg_cpu->util, max_cap);
-
-	if (sugov_hold_freq(sg_cpu) &&
-	    next_f < sg_policy->next_freq &&
-	    !sg_policy->need_freq_update) {
-		next_f = sg_policy->next_freq;
-		/* Restore the raw-frequency cache after holding the old target. */
-		sg_policy->cached_raw_freq = cached_freq;
-	}
 
 	if (!sugov_update_next_freq(sg_policy, time, next_f))
 		return;
@@ -708,7 +664,6 @@ static void sugov_update_single_perf(struct update_util_data *hook, u64 time,
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
-	unsigned long prev_util = sg_cpu->util;
 	unsigned long max_cap;
 
 	/*
@@ -726,8 +681,6 @@ static void sugov_update_single_perf(struct update_util_data *hook, u64 time,
 	if (!sugov_update_single_common(sg_cpu, time, max_cap, flags))
 		return;
 
-	if (sugov_hold_freq(sg_cpu) && sg_cpu->util < prev_util)
-		sg_cpu->util = prev_util;
 
 	cpufreq_driver_adjust_perf(sg_cpu->cpu, sg_cpu->bw_min,
 	                           sg_cpu->util, max_cap);
