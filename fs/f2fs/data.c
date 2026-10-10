@@ -1544,6 +1544,7 @@ int f2fs_map_blocks(struct inode *inode, struct f2fs_map_blocks *map,
 	blkcnt_t prealloc;
 	struct extent_info ei = {0, };
 	block_t blkaddr;
+	bool is_hole;
 	unsigned int start_pgofs;
 	int bidx = 0;
 
@@ -1640,8 +1641,9 @@ next_dnode:
 
 next_block:
 	blkaddr = f2fs_data_blkaddr(&dn);
+	is_hole = !__is_valid_data_blkaddr(blkaddr);
 
-	if (__is_valid_data_blkaddr(blkaddr) &&
+	if (!is_hole &&
 		!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE)) {
 		err = -EFSCORRUPTED;
 		f2fs_handle_error(sbi, ERROR_INVALID_BLKADDR);
@@ -1824,7 +1826,7 @@ sync_out:
 				map->m_len - ofs);
 		}
 		if (map->m_next_extent)
-			*map->m_next_extent = pgofs + 1;
+			*map->m_next_extent = is_hole ? pgofs + 1 : pgofs;
 	}
 	f2fs_put_dnode(&dn);
 unlock_out:
