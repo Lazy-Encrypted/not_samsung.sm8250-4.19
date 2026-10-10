@@ -556,146 +556,53 @@ static void __remove_ino_entry(struct f2fs_sb_info *sbi, nid_t ino, int type)
 	spin_unlock(&im->ino_lock);
 }
 
-
-static void __set_ino_bitmap(struct f2fs_sb_info *sbi, nid_t ino, int type)
-{
-        struct inode_management *im = &sbi->im[type];
-        unsigned long index = INO_SLOT_INDEX(ino);
-        unsigned int ofs = INO_BIT_OFFSET(ino);
-        void __rcu **slot;
-        void *entry;
-        unsigned long bitmap = 0;
-        int ret;
-
-        ret = radix_tree_preload(GFP_NOFS | __GFP_NOFAIL);
-        f2fs_bug_on(sbi, ret);
-
-        spin_lock(&im->ino_lock);
-        slot = radix_tree_lookup_slot(&im->ino_root, index);
-        if (slot) {
-                entry = radix_tree_deref_slot_protected(slot,
-                                                        &im->ino_lock);
-                bitmap = xa_to_value(entry);
-                if (!(bitmap & (1UL << ofs))) {
-                        bitmap |= (1UL << ofs);
-                        entry = xa_mk_value(bitmap);
-                        radix_tree_replace_slot(&im->ino_root, slot, entry);
-                }
-        } else {
-                bitmap |= (1UL << ofs);
-                entry = xa_mk_value(bitmap);
-                if (unlikely(radix_tree_insert(&im->ino_root, index, entry)))
-                        f2fs_bug_on(sbi, 1);
-        }
-        spin_unlock(&im->ino_lock);
-        radix_tree_preload_end();
-}
-
-static void __clear_ino_bitmap(struct f2fs_sb_info *sbi, nid_t ino, int type)
-{
-        struct inode_management *im = &sbi->im[type];
-        unsigned long index = INO_SLOT_INDEX(ino);
-        unsigned int ofs = INO_BIT_OFFSET(ino);
-        void __rcu **slot;
-        void *entry;
-        unsigned long bitmap;
-
-        spin_lock(&im->ino_lock);
-        slot = radix_tree_lookup_slot(&im->ino_root, index);
-        if (slot) {
-                entry = radix_tree_deref_slot_protected(slot,
-                                                        &im->ino_lock);
-                bitmap = xa_to_value(entry);
-                if (bitmap & (1UL << ofs))
-                        bitmap &= ~(1UL << ofs);
-
-                if (bitmap) {
-                        entry = xa_mk_value(bitmap);
-                        radix_tree_replace_slot(&im->ino_root, slot, entry);
-                } else {
-                        radix_tree_delete(&im->ino_root, index);
-                }
-        }
-        spin_unlock(&im->ino_lock);
-}
-
-static void __f2fs_add_ino_entry(struct f2fs_sb_info *sbi, nid_t ino,
-                                                unsigned int devidx, int type)
-{
-        if (type <= FLUSH_INO)
-                __add_ino_entry(sbi, ino, devidx, type);
-        else
-                __set_ino_bitmap(sbi, ino, type);
-}
 void f2fs_add_ino_entry(struct f2fs_sb_info *sbi, nid_t ino, int type)
 {
-        __f2fs_add_ino_entry(sbi, ino, 0, type);
+	/* add new dirty ino entry into list */
+	__add_ino_entry(sbi, ino, 0, type);
 }
 
 void f2fs_remove_ino_entry(struct f2fs_sb_info *sbi, nid_t ino, int type)
 {
-        if (type <= FLUSH_INO)
-                __remove_ino_entry(sbi, ino, type);
-        else
-                __clear_ino_bitmap(sbi, ino, type);
+	/* remove dirty ino entry from list */
+	__remove_ino_entry(sbi, ino, type);
 }
 
-/* mode should be APPEND_INO, UPDATE_INO, TRANS_DIR_INO and XATTR_DIR_INO */
+/* mode should be APPEND_INO, UPDATE_INO or TRANS_DIR_INO */
 bool f2fs_exist_written_data(struct f2fs_sb_info *sbi, nid_t ino, int mode)
 {
-        struct inode_management *im = &sbi->im[mode];
-        unsigned long index = INO_SLOT_INDEX(ino);
-        unsigned int ofs = INO_BIT_OFFSET(ino);
-        void *entry;
-        unsigned long bitmap;
+	struct inode_management *im = &sbi->im[mode];
+	struct ino_entry *e;
 
-        f2fs_bug_on(sbi, mode <= FLUSH_INO);
-
-        spin_lock(&im->ino_lock);
-        entry = radix_tree_lookup(&im->ino_root, index);
-        if (!entry) {
-                spin_unlock(&im->ino_lock);
-                return false;
-        }
-        bitmap = xa_to_value(entry);
-        spin_unlock(&im->ino_lock);
-
-        return bitmap & (1UL << ofs);
+	spin_lock(&im->ino_lock);
+	e = radix_tree_lookup(&im->ino_root, ino);
+	spin_unlock(&im->ino_lock);
+	return e ? true : false;
 }
 
 void f2fs_release_ino_entry(struct f2fs_sb_info *sbi, bool all)
 {
-        struct ino_entry *e, *tmp;
-        int i;
+	struct ino_entry *e, *tmp;
+	int i;
 
-        /* These two inode types still contain struct ino_entry objects. */
-        for (i = all ? ORPHAN_INO : FLUSH_INO; i <= FLUSH_INO; i++) {
-                struct inode_management *im = &sbi->im[i];
+	for (i = all ? ORPHAN_INO : APPEND_INO; i < MAX_INO_ENTRY; i++) {
+		struct inode_management *im = &sbi->im[i];
 
-                spin_lock(&im->ino_lock);
-                list_for_each_entry_safe(e, tmp, &im->ino_list, list) {
-                        list_del(&e->list);
-                        radix_tree_delete(&im->ino_root, e->ino);
-                        kmem_cache_free(ino_entry_slab, e);
-                        im->ino_num--;
-                }
-                spin_unlock(&im->ino_lock);
-        }
-
-        /* The remaining radix trees contain only XArray value entries. */
-        for (i = APPEND_INO; i < MAX_INO_ENTRY; i++) {
-                struct inode_management *im = &sbi->im[i];
-
-                spin_lock(&im->ino_lock);
-                xa_destroy(&im->ino_root);
-                spin_unlock(&im->ino_lock);
-        }
+		spin_lock(&im->ino_lock);
+		list_for_each_entry_safe(e, tmp, &im->ino_list, list) {
+			list_del(&e->list);
+			radix_tree_delete(&im->ino_root, e->ino);
+			kmem_cache_free(ino_entry_slab, e);
+			im->ino_num--;
+		}
+		spin_unlock(&im->ino_lock);
+	}
 }
 
 void f2fs_set_dirty_device(struct f2fs_sb_info *sbi, nid_t ino,
-                                        unsigned int devidx, int type)
+					unsigned int devidx, int type)
 {
-        __f2fs_add_ino_entry(sbi, ino, devidx, type);
+	__add_ino_entry(sbi, ino, devidx, type);
 }
 
 bool f2fs_is_dirty_device(struct f2fs_sb_info *sbi, nid_t ino,
@@ -748,14 +655,14 @@ void f2fs_release_orphan_inode(struct f2fs_sb_info *sbi)
 void f2fs_add_orphan_inode(struct inode *inode)
 {
 	/* add new orphan ino entry into list */
-	f2fs_add_ino_entry(F2FS_I_SB(inode), inode->i_ino, ORPHAN_INO);
+	__add_ino_entry(F2FS_I_SB(inode), inode->i_ino, 0, ORPHAN_INO);
 	f2fs_update_inode_page(inode);
 }
 
 void f2fs_remove_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 {
 	/* remove orphan entry from orphan list */
-	f2fs_remove_ino_entry(sbi, ino, ORPHAN_INO);
+	__remove_ino_entry(sbi, ino, ORPHAN_INO);
 }
 
 static int recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
