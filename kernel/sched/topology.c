@@ -513,6 +513,10 @@ static int init_rootdomain(struct root_domain *rd)
 	if (cpupri_init(&rd->cpupri) != 0)
 		goto free_cpudl;
 
+#ifdef CONFIG_SCHED_WALT
+	rd->max_cap_orig_cpu = rd->min_cap_orig_cpu = -1;
+	rd->mid_cap_orig_cpu = -1;
+#endif
 	init_max_cpu_capacity(&rd->max_cpu_capacity);
 
 	return 0;
@@ -1537,14 +1541,13 @@ sd_init(struct sched_domain_topology_level *tl,
 		sd->cache_nice_tries = 1;
 	}
 
-	/*
-	 * For all levels sharing cache; connect a sched_domain_shared
-	 * instance.
-	 */
-	if (sd->flags & SD_SHARE_PKG_RESOURCES) {
+	/* WALT keeps overutilization state at every domain level. */
+	if (IS_ENABLED(CONFIG_SCHED_WALT) ||
+	    (sd->flags & SD_SHARE_PKG_RESOURCES)) {
 		sd->shared = *per_cpu_ptr(sdd->sds, sd_id);
 		atomic_inc(&sd->shared->ref);
-		atomic_set(&sd->shared->nr_busy_cpus, sd_weight);
+		if (sd->flags & SD_SHARE_PKG_RESOURCES)
+			atomic_set(&sd->shared->nr_busy_cpus, sd_weight);
 	}
 
 	sd->private = sdd;
@@ -2101,6 +2104,35 @@ build_sched_domains(const struct cpumask *cpu_map, struct sched_domain_attr *att
 			init_sched_groups_capacity(i, sd);
 		}
 	}
+
+#ifdef CONFIG_SCHED_WALT
+	/* Resolve the capacity tiers before publishing the root domain. */
+	for_each_cpu(i, cpu_map) {
+		int max_cpu = d.rd->max_cap_orig_cpu;
+		int min_cpu = d.rd->min_cap_orig_cpu;
+
+		if (max_cpu < 0 || arch_scale_cpu_capacity(i) >
+				   arch_scale_cpu_capacity(max_cpu))
+			d.rd->max_cap_orig_cpu = i;
+		if (min_cpu < 0 || arch_scale_cpu_capacity(i) <
+				   arch_scale_cpu_capacity(min_cpu))
+			d.rd->min_cap_orig_cpu = i;
+	}
+	for_each_cpu(i, cpu_map) {
+		unsigned long capacity = arch_scale_cpu_capacity(i);
+
+		if (capacity != arch_scale_cpu_capacity(d.rd->min_cap_orig_cpu) &&
+		    capacity != arch_scale_cpu_capacity(d.rd->max_cap_orig_cpu)) {
+			d.rd->mid_cap_orig_cpu = i;
+			break;
+		}
+	}
+	if (d.rd->max_cap_orig_cpu >= 0) {
+		d.rd->max_cpu_capacity.cpu = d.rd->max_cap_orig_cpu;
+		d.rd->max_cpu_capacity.val =
+			arch_scale_cpu_capacity(d.rd->max_cap_orig_cpu);
+	}
+#endif
 
 	/* Attach the domains */
 	rcu_read_lock();

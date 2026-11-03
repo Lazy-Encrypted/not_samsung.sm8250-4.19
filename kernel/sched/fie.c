@@ -128,7 +128,7 @@ static DEFINE_PER_CPU(struct cpu_pmu, cpu_pmu_evs) = {
 
 static DEFINE_PER_CPU_READ_MOSTLY(bool, cpu_has_amu);
 static DEFINE_PER_CPU_READ_MOSTLY(bool, cpu_has_amu_const);
-static DEFINE_PER_CPU_READ_MOSTLY(u32, cpu_max_freq);
+static DEFINE_PER_CPU_READ_MOSTLY(u32, fie_cpu_max_freq);
 
 enum cpu_throttle_src {
 	CPU_HW_THROTTLE,
@@ -181,7 +181,7 @@ void fie_init_cpu_domain(const struct cpumask *cpus, unsigned int max_freq)
 	int cpu;
 
 	for_each_cpu(cpu, cpus)
-		per_cpu(cpu_max_freq, cpu) = max_freq;
+		per_cpu(fie_cpu_max_freq, cpu) = max_freq;
 
 	t = kzalloc(sizeof(*t), GFP_KERNEL);
 	BUG_ON(!t);
@@ -547,7 +547,7 @@ static void update_cpu_hw_throttle(void)
 		goto reset_stats;
 
 	/* Calculate the measured frequency */
-	max_freq = per_cpu(cpu_max_freq, cpu);
+	max_freq = per_cpu(fie_cpu_max_freq, cpu);
 	ns = cntpct_to_ns(htd->const_cyc);
 	freq = min(max_freq, USEC_PER_SEC * htd->cpu_cyc / ns);
 
@@ -694,7 +694,7 @@ static void update_freq_scale(int cpu, struct rq *rq, bool local_cpu)
 	 */
 	if (rq->cpu == cpu) {
 		if (sfd->const_cyc >= cpu_min_sample_cntpct) {
-			u64 max_freq = per_cpu(cpu_max_freq, cpu);
+			u64 max_freq = per_cpu(fie_cpu_max_freq, cpu);
 			u64 freq, ns = cntpct_to_ns(sfd->const_cyc);
 
 			/* Report the measured frequency and reset the stats */
