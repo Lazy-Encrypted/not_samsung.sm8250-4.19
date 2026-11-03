@@ -78,6 +78,10 @@ static bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
         unsigned long rq_util, max_util;
         bool ret;
 
+	/* Each WALT window supplies a fresh utilization sample. */
+	if (IS_ENABLED(CONFIG_SCHED_WALT))
+		return false;
+
         /* Do not hold frequency when UCLAMP_MAX caps the runqueue. */
         if (uclamp_is_used()) {
                 rq_util = cpu_util_cfs(rq) + cpu_util_rt(rq);
@@ -228,7 +232,7 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	 * must be determined before a decision can be made to rate limit the
 	 * frequency change, hence the rate limit check is bypassed here.
 	 */
-	if (arch_scale_freq_invariant())
+	if (IS_ENABLED(CONFIG_SCHED_WALT) || arch_scale_freq_invariant())
 		return true;
 
 	return !sugov_should_rate_limit(sg_policy, time);
@@ -315,7 +319,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int freq;
 
-	if (arch_scale_freq_invariant())
+	if (IS_ENABLED(CONFIG_SCHED_WALT) || arch_scale_freq_invariant())
 		freq = policy->cpuinfo.max_freq;
 	else
 		/*
@@ -435,8 +439,14 @@ unsigned long sugov_effective_cpu_perf(int cpu, unsigned long actual,
 	/*
 	 * Speed up/slow down response timee first then apply DVFS headroom.
 	 */
-	actual = sugov_apply_response_time(actual, cpu);
-	actual = sugov_apply_dvfs_headroom(actual, cpu);
+	if (IS_ENABLED(CONFIG_SCHED_WALT)) {
+		/* WALT is already frequency invariant; use the DVFS margin. */
+		actual = min_t(unsigned long, actual + (actual >> 2),
+			       SCHED_CAPACITY_SCALE);
+	} else {
+		actual = sugov_apply_response_time(actual, cpu);
+		actual = sugov_apply_dvfs_headroom(actual, cpu);
+	}
 	/* Actually we don't need to target the max performance */
 	if (actual < max)
 		max = actual;
@@ -491,6 +501,13 @@ static void sugov_get_util(struct sugov_cpu *sg_cpu, unsigned long boost)
 	unsigned long min, max, util = cpu_util_cfs(cpu_rq(sg_cpu->cpu));
 
 	util = effective_cpu_util(sg_cpu->cpu, util, &min, &max);
+#ifdef CONFIG_SCHED_WALT
+	{
+		struct sched_walt_cpu_load walt_load;
+
+		util = cpu_util_freq_walt(sg_cpu->cpu, &walt_load);
+	}
+#endif
 
 	/* UCLAMP-aware dynamic boost */
 	util = sugov_apply_uclamp_boost(sg_cpu, util);
