@@ -2098,7 +2098,7 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 
 	__set_task_cpu(p, new_cpu);
 }
-#ifdef CONFIG_NUMA_BALANCING
+#if defined(CONFIG_NUMA_BALANCING) || defined(CONFIG_SCHED_WALT)
 static void __migrate_swap_task(struct task_struct *p, int cpu)
 {
 	if (task_on_rq_queued(p)) {
@@ -2213,7 +2213,7 @@ int migrate_swap(struct task_struct *cur, struct task_struct *p,
 out:
 	return ret;
 }
-#endif /* CONFIG_NUMA_BALANCING */
+#endif /* CONFIG_NUMA_BALANCING || CONFIG_SCHED_WALT */
 /*
  * Calls to sched_migrate_to_cpumask_start() cannot nest. This can only be used
  * in process context.
