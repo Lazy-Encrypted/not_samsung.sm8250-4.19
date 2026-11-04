@@ -1891,11 +1891,20 @@ static int migration_cpu_stop(void *data)
 	struct task_struct *p = arg->task;
 	struct rq *rq = this_rq();
 	struct rq_flags rf;
+#ifdef CONFIG_SCHED_WALT
+	unsigned int pc_entry, pc_flush, pc_locked;
+	unsigned int pc_before = 0, pc_after = 0, pc_exit;
+	bool did_migrate = false;
+	static atomic_t debug_count = ATOMIC_INIT(0);
+#endif
 
 	/*
 	 * The original target CPU might have gone down and we might
 	 * be on another CPU but it doesn't matter.
 	 */
+#ifdef CONFIG_SCHED_WALT
+	pc_entry = preempt_count();
+#endif
 	local_irq_disable();
 	/*
 	 * We need to explicitly wake pending tasks before running
@@ -1903,24 +1912,55 @@ static int migration_cpu_stop(void *data)
 	 * during wakeups, see set_cpus_allowed_ptr()'s TASK_WAKING test.
 	 */
 	flush_smp_call_function_from_idle();
+#ifdef CONFIG_SCHED_WALT
+	pc_flush = preempt_count();
+#endif
 
 	raw_spin_lock(&p->pi_lock);
 	rq_lock(rq, &rf);
+#ifdef CONFIG_SCHED_WALT
+	pc_locked = preempt_count();
+#endif
 	/*
 	 * If task_rq(p) != rq, it cannot be migrated here, because we're
 	 * holding rq->lock, if p->on_rq == 0 it cannot get enqueued because
 	 * we're holding p->pi_lock.
 	 */
 	if (task_rq(p) == rq) {
-		if (task_on_rq_queued(p))
+		if (task_on_rq_queued(p)) {
+#ifdef CONFIG_SCHED_WALT
+			did_migrate = true;
+			pc_before = preempt_count();
+#endif
 			rq = __migrate_task(rq, &rf, p, arg->dest_cpu);
-		else
+#ifdef CONFIG_SCHED_WALT
+			pc_after = preempt_count();
+#endif
+		} else {
 			p->wake_cpu = arg->dest_cpu;
+		}
 	}
 	rq_unlock(rq, &rf);
 	raw_spin_unlock(&p->pi_lock);
 
+#ifdef CONFIG_SCHED_WALT
+	pc_exit = preempt_count();
+#endif
 	local_irq_enable();
+
+#ifdef CONFIG_SCHED_WALT
+	if (unlikely(pc_entry != PREEMPT_DISABLE_OFFSET ||
+		     pc_flush != pc_entry ||
+		     pc_locked != pc_flush + 2 ||
+		     (did_migrate && pc_after != pc_before) ||
+		     pc_exit != pc_entry)) {
+		if (atomic_inc_return(&debug_count) <= 20)
+			pr_err("WALT-MIGRATE: task=%s/%d dst=%d moved=%d entry=%u flush=%u locked=%u before=%u after=%u exit=%u\\n",
+			       p->comm, p->pid, arg->dest_cpu,
+			       did_migrate, pc_entry, pc_flush,
+			       pc_locked, pc_before, pc_after, pc_exit);
+	}
+#endif
 	return 0;
 }
 
