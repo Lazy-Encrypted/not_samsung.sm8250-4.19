@@ -8568,7 +8568,7 @@ static void select_cpu_candidates(struct sched_domain *sd, cpumask_t *cpus,
 			 */
 			util = uclamp_rq_util_with(cpu_rq(cpu), util, p);
 
-			if (!fits_capacity(util, cpu_cap))
+			if (!fits_capacity(util, cpu))
 				continue;
 
 			/*
