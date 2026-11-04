@@ -659,9 +659,6 @@ static int qcom_resources_init(struct platform_device *pdev)
 
 static int qcom_cpufreq_hw_driver_probe(struct platform_device *pdev)
 {
-	struct cpu_cycle_counter_cb cycle_counter_cb = {
-		.get_cpu_cycle_counter = qcom_cpufreq_get_cpu_cycle_counter,
-	};
 	int rc, cpu;
 
 	/* Get the bases of cpufreq for domains */
@@ -680,11 +677,6 @@ static int qcom_cpufreq_hw_driver_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	rc = register_cpu_cycle_counter_cb(&cycle_counter_cb);
-	if (rc) {
-		cpufreq_unregister_driver(&cpufreq_qcom_hw_driver);
-		return rc;
-	}
 
 	rc = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE, "qcom-cpufreq:online",
 				       cpuhp_qcom_online, NULL);
