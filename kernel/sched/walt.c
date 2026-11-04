@@ -149,7 +149,7 @@ unsigned int
 min_max_possible_capacity = 1024; /* min(rq->max_possible_capacity) */
 
 /* Temporarily disable window-stats activity on all cpus */
-unsigned int __read_mostly sched_disable_window_stats;
+unsigned int __read_mostly sched_disable_window_stats = 1;
 
 /*
  * Task load is categorized into buckets for the purpose of top task tracking.
