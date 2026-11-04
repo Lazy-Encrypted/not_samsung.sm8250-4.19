@@ -7829,6 +7829,13 @@ static inline bool is_many_wakeup(int sibling_count_hint)
 }
 #endif
 
+#ifdef CONFIG_SCHED_WALT
+static inline bool walt_eas_valid_cpu(int cpu)
+{
+return cpu >= 0 && cpu < nr_cpu_ids && cpu_possible(cpu);
+}
+#endif
+
 static int get_start_cpu(struct task_struct *p, bool sync_boost)
 {
 #ifdef CONFIG_SCHED_WALT
@@ -7844,6 +7851,17 @@ static int get_start_cpu(struct task_struct *p, bool sync_boost)
 			task_boost_policy(p) == SCHED_BOOST_ON_BIG ||
 			task_boost == TASK_BOOST_ON_MID;
 	bool task_skip_min = task_skip_min_cpu(p);
+
+if (unlikely(!walt_eas_valid_cpu(rd->min_cap_orig_cpu) ||
+    !walt_eas_valid_cpu(rd->max_cap_orig_cpu) ||
+    (rd->mid_cap_orig_cpu != -1 &&
+     !walt_eas_valid_cpu(rd->mid_cap_orig_cpu)))) {
+_ratelimited(
+invalid capacity CPU tiers: min=%d mid=%d max=%d nr=%d\\n",
+_cap_orig_cpu, rd->mid_cap_orig_cpu,
+nr_cpu_ids);
+ -1;
+}
 
 	/*
 	 * note about min/mid/max_cap_orig_cpu - either all of them will be -ve
@@ -8701,11 +8719,12 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 	int start_cpu = get_start_cpu(p, sync_boost);
 
 #ifdef CONFIG_SCHED_WALT
-/*
- * Temporarily bypass WALT energy-aware CPU selection.
- * The regular fair scheduler will select the target CPU.
- */
-return -1;
+if (unlikely(!walt_eas_valid_cpu(start_cpu))) {
+_ratelimited(
+invalid start CPU=%d prev=%d nr=%d\\n",
+prev_cpu, nr_cpu_ids);
+eas_not_ready;
+}
 #endif
 
 #ifdef CONFIG_SCHED_WALT
