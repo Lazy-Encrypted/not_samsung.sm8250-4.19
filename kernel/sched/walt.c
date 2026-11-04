@@ -148,8 +148,8 @@ unsigned int max_possible_capacity = 1024; /* max(rq->max_possible_capacity) */
 unsigned int
 min_max_possible_capacity = 1024; /* min(rq->max_possible_capacity) */
 
-/* Temporarily disable window-stats activity on all cpus */
-unsigned int __read_mostly sched_disable_window_stats = 1;
+/* WALT window accounting is enabled by default. */
+unsigned int __read_mostly sched_disable_window_stats;
 
 /*
  * Task load is categorized into buckets for the purpose of top task tracking.
