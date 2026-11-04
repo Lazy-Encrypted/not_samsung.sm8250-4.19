@@ -8701,6 +8701,14 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 	int start_cpu = get_start_cpu(p, sync_boost);
 
 #ifdef CONFIG_SCHED_WALT
+/*
+ * Temporarily bypass WALT energy-aware CPU selection.
+ * The regular fair scheduler will select the target CPU.
+ */
+return -1;
+#endif
+
+#ifdef CONFIG_SCHED_WALT
 	if (is_many_wakeup(sibling_count_hint) && prev_cpu != cpu &&
 			cpumask_test_cpu(prev_cpu, &p->cpus_allowed))
 		return prev_cpu;
