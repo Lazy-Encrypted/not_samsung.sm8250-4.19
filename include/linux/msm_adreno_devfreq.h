@@ -65,6 +65,7 @@ struct devfreq_msm_adreno_tz_data {
 	bool is_64;
 	bool disable_busy_time_burst;
 	bool ctxt_aware_enable;
+	u64 burst_hold_until_us;
 };
 
 struct msm_adreno_extended_profile {

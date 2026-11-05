@@ -27,11 +27,14 @@ static DEFINE_SPINLOCK(suspend_lock);
  * FLOOR is 5msec to capture up to 3 re-draws
  * per frame for 60fps content.
  */
-#define FLOOR		        4000
+#define FLOOR		        2000
 /*
  * MIN_BUSY is 1 msec for the sample to be sent
  */
-#define MIN_BUSY		500
+#define MIN_BUSY		250
+#define GPU_BURST_BUSY_US 750
+#define GPU_BURST_LOAD_PCT 35
+#define GPU_BURST_HOLD_US 48000
 #define MAX_TZ_VERSION		0
 
 /*
@@ -615,6 +618,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	int val, level = 0;
 	unsigned int scm_data[4];
 	int context_count = 0;
+	u64 now_us;
 
 	if (!priv)
 		return -EINVAL;
@@ -635,6 +639,21 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 
 	/* Update the GPU load statistics */
 	compute_work_load(stats, priv, devfreq);
+	now_us = (u64)ktime_to_us(ktime_get());
+
+	/* Boost short GPU bursts, including UI composition. */
+	if (priv->bin.total_time >= FLOOR &&
+	    priv->bin.busy_time >= GPU_BURST_BUSY_US &&
+	    (u64)priv->bin.busy_time * 100 >=
+	    (u64)priv->bin.total_time * GPU_BURST_LOAD_PCT)
+		priv->burst_hold_until_us = now_us + GPU_BURST_HOLD_US;
+
+	if (now_us < priv->burst_hold_until_us) {
+		priv->bin.total_time = 0;
+		priv->bin.busy_time = 0;
+		*freq = devfreq->profile->freq_table[0];
+		return 0;
+	}
 	/*
 	 * Do not waste CPU cycles running this algorithm if
 	 * the GPU just started, or if less than FLOOR time
@@ -764,6 +783,7 @@ static int tz_start(struct devfreq *devfreq)
 	partner_gpu_profile = gpu_profile;
 
 	priv = devfreq->data;
+	priv->burst_hold_until_us = 0;
 	priv->nb.notifier_call = tz_notify;
 
 	out = 1;
@@ -856,6 +876,7 @@ static int tz_suspend(struct devfreq *devfreq)
 
 	__secure_tz_reset_entry2(scm_data, sizeof(scm_data), priv->is_64);
 
+	priv->burst_hold_until_us = 0;
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
 	return 0;
