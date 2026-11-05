@@ -58,6 +58,7 @@ void erofs_release_pages(struct list_head *pool)
 
 int erofs_rsvpool_init(void)
 {
+	unsigned int i;
 	if (!erofs_rsv_nrpages)
 		return 0;
 
@@ -67,6 +68,18 @@ int erofs_rsvpool_init(void)
 		erofs_rsv_nrpages = 0;
 		return 0;
 	}
+
+	/* Preallocate bounce pages before memory pressure begins. */
+	for (i = 0; i < erofs_rsv_nrpages; i++) {
+		struct page *page = alloc_page(GFP_KERNEL | __GFP_NOWARN);
+
+		if (!page)
+			break;
+		erofs_rsv_pages[erofs_rsv_count++] = page;
+	}
+
+	pr_info("EROFS: reserved %u/%u decompression pages\n",
+		erofs_rsv_count, erofs_rsv_nrpages);
 
 	return 0;
 }
