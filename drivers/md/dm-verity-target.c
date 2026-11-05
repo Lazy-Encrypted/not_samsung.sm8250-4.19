@@ -661,7 +661,7 @@ no_prefetch_cluster:
 		// for emmc, it is more efficient to send bigger read
 		prefetch_size = max((sector_t)CONFIG_DM_VERITY_HASH_PREFETCH_MIN_SIZE,
 			hash_block_end - hash_block_start + 1);
-		if ((hash_block_start + prefetch_size) >= (v->hash_start + v->hash_blocks)) {
+		if ((hash_block_start + prefetch_size) >= v->hash_blocks) {
 			prefetch_size = hash_block_end - hash_block_start + 1;
 		}
 		dm_bufio_prefetch(v->bufio, hash_block_start,
