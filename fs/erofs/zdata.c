@@ -1197,7 +1197,7 @@ static int z_erofs_decompress_pcluster(struct super_block *sb,
 					.partial_decoding = partial,
 					.gfp = pcl->besteffort ?
 						GFP_KERNEL | __GFP_NOFAIL :
-						GFP_NOWAIT | __GFP_NORETRY
+						GFP_NOWAIT | __GFP_NORETRY | __GFP_NOWARN
 				 }, pagepool);
 
 out:
