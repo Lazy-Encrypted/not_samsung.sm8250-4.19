@@ -27,6 +27,11 @@
 #include "../drivers/camera_sensor_r8q_r00.dtsi"
 
 &soc {
+	restart@c264000 {
+		/* Preserve ramoops memory across normal reboots. */
+		qcom,force-warm-reboot;
+	};
+
 	i2c_17: i2c@17 { /* SW I2C */
 		status = "ok";
 
