@@ -19,6 +19,7 @@
 #include <linux/version.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
+#include <linux/kmsg_dump.h>
 #include <linux/init.h>
 #include <linux/input/qpnp-power-on.h>
 #include <linux/kernel_stat.h>
@@ -319,6 +320,9 @@ static inline void sec_debug_pm_restart(char *cmd)
 
 static void __sec_debug_hw_reset(void)
 {
+	/* The panic notifier resets before panic() reaches its kmsg dump. */
+	printk_safe_flush_on_panic();
+	kmsg_dump(KMSG_DUMP_PANIC);
 	sec_debug_pm_restart("sec_debug_hw_reset");
 }
 
