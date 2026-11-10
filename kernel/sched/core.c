@@ -8422,7 +8422,7 @@ static u64 cpu_uclamp_ls_read_u64(struct cgroup_subsys_state *css,
 struct uclamp_param {
 	char *name;
 	char uclamp_min[3];
-	char uclamp_max[3];
+	char uclamp_max[4];
 	u64  uclamp_latency_sensitive;
 };
 
@@ -8432,7 +8432,7 @@ static void uclamp_set(struct cgroup_subsys_state *css)
 
 	static struct uclamp_param tgts[] = {
 		{"top-app",             "50", "max",  1},
-       		{"foreground",          "15",  "80",  0},
+		{"foreground",          "15", "max",  0},
                 {"dex2oat",             "0",  "30",  0},
         	{"background",          "0",  "30",  0},
         	{"system-background",   "0",  "50",  0},
