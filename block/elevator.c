@@ -606,9 +606,9 @@ out:
 }
 
 /*
- * For blk-mq devices, we default to using mq-deadline, if available, for single
- * queue devices.  If deadline isn't available OR we have multiple queues,
- * default to "none".
+ * Prefer SSG for single-queue blk-mq devices, falling back to ADIOS, Kyber
+ * and mq-deadline. Leave multi-queue devices and queues opting out of a
+ * default scheduler unchanged.
  */
 int elevator_init_mq(struct request_queue *q)
 {
@@ -628,7 +628,10 @@ int elevator_init_mq(struct request_queue *q)
 
 	e = NULL;
 
-	if (IS_ENABLED(CONFIG_MQ_IOSCHED_ADIOS))
+	if (IS_ENABLED(CONFIG_MQ_IOSCHED_SSG))
+		e = elevator_get(q, "ssg", false);
+
+	if (!e && IS_ENABLED(CONFIG_MQ_IOSCHED_ADIOS))
 		e = elevator_get(q, "adios", false);
 
 	if (!e && IS_ENABLED(CONFIG_MQ_IOSCHED_KYBER))
