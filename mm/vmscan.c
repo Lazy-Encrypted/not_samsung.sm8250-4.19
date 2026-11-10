@@ -208,6 +208,8 @@ static DEFINE_RWLOCK(shrinker_rwlock);
  */
 #define SHRINKER_REGISTERING ((struct shrinker *)~0UL)
 
+/* Serialize memcg IDR publication, map expansion and callbacks. */
+static DECLARE_RWSEM(shrinker_rwsem);
 static DEFINE_IDR(shrinker_idr);
 static int shrinker_nr_max;
 
@@ -437,6 +439,10 @@ void free_prealloced_shrinker(struct shrinker *shrinker)
 void register_shrinker_prepared(struct shrinker *shrinker)
 {
 	init_rwsem(&shrinker->del_rwsem);
+#ifdef CONFIG_MEMCG_KMEM
+	if (shrinker->flags & SHRINKER_MEMCG_AWARE)
+		down_write(&shrinker_rwsem);
+#endif
 	spin_lock(&shrinker_lock);
 	/* Use the RCU list mutation primitive to allow concurrent iteration */
 	list_add_tail_rcu(&shrinker->list, &shrinker_list);
@@ -445,6 +451,10 @@ void register_shrinker_prepared(struct shrinker *shrinker)
 		idr_replace(&shrinker_idr, shrinker, shrinker->id);
 #endif
 	spin_unlock(&shrinker_lock);
+#ifdef CONFIG_MEMCG_KMEM
+	if (shrinker->flags & SHRINKER_MEMCG_AWARE)
+		up_write(&shrinker_rwsem);
+#endif
 }
 
 int register_shrinker(struct shrinker *shrinker)
