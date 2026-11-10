@@ -559,10 +559,10 @@ static void ssg_exit_queue(struct elevator_queue *e)
 	BUG_ON(!list_empty(&ssg->fifo_list[READ]));
 	BUG_ON(!list_empty(&ssg->fifo_list[WRITE]));
 
+	blk_sec_stats_account_exit(e);
+
 	kfree(ssg->rq_info);
 	kfree(ssg);
-
-	blk_sec_stats_account_exit(e);
 }
 
 /*
