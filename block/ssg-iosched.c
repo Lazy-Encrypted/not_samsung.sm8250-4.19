@@ -55,6 +55,7 @@ struct ssg_request_info {
 
 	struct blkcg_gq *blkg;
 
+	sector_t sector;
 	unsigned int data_size;
 };
 
@@ -421,8 +422,10 @@ static struct request *ssg_dispatch_request(struct blk_mq_hw_ctx *hctx)
 	spin_unlock(&ssg->lock);
 
 	rqi = ssg_rq_info(ssg, rq);
-	if (likely(rqi))
+	if (likely(rqi)) {
+		rqi->sector = blk_rq_pos(rq);
 		rqi->data_size = blk_rq_bytes(rq);
+	}
 
 	return rq;
 }
@@ -433,7 +436,7 @@ static void ssg_completed_request(struct request *rq, u64 now)
 	struct ssg_request_info *rqi;
 
 	rqi = ssg_rq_info(ssg, rq);
-	if (likely(rqi))
+	if (likely(rqi && rqi->sector == blk_rq_pos(rq)))
 		blk_sec_stats_account_io_done(rq, rqi->data_size,
 				rqi->tgid, rqi->tg_name, rqi->tg_start_time);
 }
