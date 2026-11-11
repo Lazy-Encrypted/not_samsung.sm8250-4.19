@@ -267,7 +267,6 @@ static inline bool lru_gen_del_page(struct lruvec *lruvec, struct page *page, bo
 	/* for page_migrate_flags() */
 	flags = !reclaiming && lru_gen_is_active(lruvec, gen) ? BIT(PG_active) : 0;
 	flags = set_mask_bits(&page->flags, LRU_GEN_MASK, flags);
-	gen = ((flags & LRU_GEN_MASK) >> LRU_GEN_PGOFF) - 1;
 
 	lru_gen_update_size(lruvec, page, gen, -1);
 	list_del(&page->lru);
