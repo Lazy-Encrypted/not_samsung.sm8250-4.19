@@ -95,6 +95,11 @@ VDSO_CFLAGS += -D__uint128_t='void*'
 VDSO_CFLAGS += $(call cc32-disable-warning,shift-count-overflow)
 VDSO_CFLAGS += -Wno-int-to-pointer-cast
 
+ifeq ($(cc-name),clang)
+# Snapdragon LLVM specific warning
+VDSO_CFLAGS += $(call cc32-disable-warning, vectorizer-no-neon)
+endif
+
 VDSO_AFLAGS := $(VDSO_CAFLAGS)
 VDSO_AFLAGS += -D__ASSEMBLY__
 
@@ -120,10 +125,10 @@ c-obj-vdso := note.o
 c-obj-vdso-gettimeofday := vgettimeofday.o
 
 ifneq ($(c-gettimeofday-y),)
-VDSO_CFLAGS_gettimeofday_o += -include $(c-gettimeofday-y)
+VDSO_CFLAGS_gettimeofday_o += -include $(c-gettimeofday-y)  -fomit-frame-pointer
 endif
 
-VDSO_CFLAGS_REMOVE_vgettimeofday.o = $(CC_FLAGS_FTRACE) -Os
+VDSO_CFLAGS_REMOVE_vgettimeofday.o = $(CC_FLAGS_FTRACE) -Os -fno-omit-frame-pointer
 
 # Build rules
 targets := $(c-obj-vdso) $(c-obj-vdso-gettimeofday) $(asm-obj-vdso) vdso.so vdso.so.dbg vdso.so.raw
