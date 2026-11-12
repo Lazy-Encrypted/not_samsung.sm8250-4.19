@@ -7,7 +7,6 @@ SMP=$3
 PREEMPT=$4
 CC_VERSION="$5"
 LD=$6
-MESSAGE="(not_kernel: It's about a girl in a box.)"
 
 vecho() { [ "${quiet}" = "silent_" ] || echo "$@" ; }
 
@@ -76,7 +75,13 @@ UTS_TRUNCATE="cut -b -$UTS_LEN"
 
   LD_VERSION=$($LD -v | head -n1 | sed 's/(compatible with [^)]*)//' \
 		      | sed 's/[[:space:]]*$//')
-  printf '#define LINUX_COMPILER "%s"\n' "$CC_VERSION, $MESSAGE"
+  SD_BRANDING=$($CC --version 2>/dev/null | grep -m1 "Snapdragon")
+  if [ -n "$SD_BRANDING" ]; then
+    COMPILER_INFO="$SD_BRANDING"
+  else
+    COMPILER_INFO="$CC_VERSION"
+  fi
+  printf '#define LINUX_COMPILER "%s"\n' "$COMPILER_INFO"
 ) > .tmpcompile
 
 # Only replace the real compile.h if the new one is different,
