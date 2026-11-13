@@ -138,7 +138,8 @@ static inline u64 sugov_calc_freq_response_ms(struct sugov_policy *sg_policy)
 	 */
 	cap = sec_max_freq * cap / max_freq;
 
-	return approximate_runtime(cap + 1);
+	cap = min_t(unsigned long, cap + 1, SCHED_CAPACITY_SCALE);
+	return DIV_ROUND_UP_ULL(approximate_runtime_us(cap), USEC_PER_MSEC);
 }
 
 static inline void sugov_update_response_time_mult(struct sugov_policy *sg_policy)

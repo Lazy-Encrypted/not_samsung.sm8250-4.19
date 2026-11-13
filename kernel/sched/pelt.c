@@ -32,7 +32,7 @@
 
 /*
  * Approximate:
- *   val * y^n,    where y^32 ~= 0.5 (~1 scheduling period)
+ *   val * y^n,    where y^LOAD_AVG_PERIOD ~= 0.5
  */
 static u64 decay_load(u64 val, u64 n)
 {
@@ -140,16 +140,12 @@ accumulate_sum(u64 delta, struct sched_avg *sa,
 	sa->period_contrib = delta;
 	divider = LOAD_AVG_MAX - 1024 + sa->period_contrib;
 
-	if (load) {
+	/* Historical sums can exceed the current load and runnable count. */
+	if (load)
 		sa->load_sum += load * contrib;
-		sa->load_sum = min_t(u64, sa->load_sum, divider * load);
-	}
 
-	if (runnable) {
+	if (runnable)
 		sa->runnable_sum += runnable * contrib << SCHED_CAPACITY_SHIFT;
-		sa->runnable_sum = min_t(u64, sa->runnable_sum,
-					 divider * runnable << SCHED_CAPACITY_SHIFT);
-	}
 
 	if (running) {
 		sa->util_sum += contrib << SCHED_CAPACITY_SHIFT;
@@ -175,10 +171,10 @@ accumulate_sum(u64 delta, struct sched_avg *sa,
  * following representation of historical load:
  *   u_0 + u_1*y + u_2*y^2 + u_3*y^3 + ...
  *
- * We choose y based on the with of a reasonably scheduling period, fixing:
- *   y^32 = 0.5
+ * We choose y based on the configured half-life, fixing:
+ *   y^LOAD_AVG_PERIOD = 0.5
  *
- * This means that the contribution to load ~32ms ago (u_32) will be weighted
+ * This means that the contribution one half-life ago will be weighted
  * approximately half as much as the contribution to load within the last ms
  * (u_0).
  *
@@ -496,6 +492,9 @@ unsigned long approximate_util_avg(unsigned long util, u64 delta)
 	if (unlikely(!delta))
 		return util;
 
+	/* Convert microseconds to PELT units (1024 ns), without overflowing. */
+	delta = div_u64(delta, 1024) * 1000 +
+		((delta % 1024) * 1000) / 1024;
 	accumulate_sum(delta, &sa, 1, 0, 1);
 	___update_load_avg(&sa, 0);
 
@@ -503,19 +502,27 @@ unsigned long approximate_util_avg(unsigned long util, u64 delta)
 }
 
 /*
- * Approximate the required amount of runtime in ms required to reach @util.
+ * Approximate the runtime in microseconds required to reach @util.
+ * Targets above the maximum utilization are saturated to that maximum.
  */
-u64 approximate_runtime(unsigned long util)
+u64 approximate_runtime_us(unsigned long util)
 {
 	struct sched_avg sa = {};
-	u64 delta = 1024; // period = 1024 = ~1ms
+	u64 delta = 1024; /* One period is 1024 * 1024 ns. */
 	u64 runtime = 0;
+	u32 prev_sum;
+
+	util = min_t(unsigned long, util, SCHED_CAPACITY_SCALE);
 
 	while (sa.util_avg < util) {
+		prev_sum = sa.util_sum;
 		accumulate_sum(delta, &sa, 1, 0, 1);
 		___update_load_avg(&sa, 0);
 		runtime++;
+		/* Fixed-point rounding can prevent further growth. */
+		if (sa.util_sum == prev_sum)
+			break;
 	}
 
-	return runtime;
+	return DIV_ROUND_UP_ULL(runtime * 1024 * 1024, NSEC_PER_USEC);
 }
