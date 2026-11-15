@@ -113,7 +113,6 @@ accumulate_sum(u64 delta, struct sched_avg *sa,
 	u32 contrib = (u32)delta; /* p == 0 -> delta < 1024 */
 	u64 periods;
 	u64 divider;
-	bool eas_enable = sched_energy_enabled();
 
 	delta += sa->period_contrib;
 	periods = delta / 1024; /* A period is 1024us (~1ms) */
@@ -122,32 +121,20 @@ accumulate_sum(u64 delta, struct sched_avg *sa,
 	 * Step 1: decay old *_sum if we crossed period boundaries.
 	 */
 	if (periods) {
-		if (running && eas_enable)
-			delta %= 1024;
-		else {
-			sa->load_sum = decay_load(sa->load_sum, periods);
-			sa->runnable_sum =
-				decay_load(sa->runnable_sum, periods);
-			sa->util_sum = decay_load((u64)(sa->util_sum), periods);
+		sa->load_sum = decay_load(sa->load_sum, periods);
+		sa->runnable_sum =
+			decay_load(sa->runnable_sum, periods);
+		sa->util_sum = decay_load((u64)sa->util_sum, periods);
 
-			/*
-			 * Step 2
-			 */
-			delta %= 1024;
-			if (load) {
-				/*
-				 * This relies on the:
-				 *
-				 * if (!load)
-				 *	runnable = running = 0;
-				 *
-				 * clause from ___update_load_sum(); this results in
-				 * the below usage of @contrib to disappear entirely,
-				 * so no point in calculating it.
-				 */
-				contrib = __accumulate_pelt_segments(periods,
-						1024 - sa->period_contrib, delta);
-			}
+		/*
+		 * Step 2: accumulate contributions from elapsed periods.
+		 */
+		delta %= 1024;
+
+		if (load) {
+			contrib = __accumulate_pelt_segments(periods,
+						1024 - sa->period_contrib,
+						delta);
 		}
 	}
 	sa->period_contrib = delta;
