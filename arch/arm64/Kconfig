@@ -1880,11 +1880,3 @@ source "arch/arm64/kvm/Kconfig"
 if CRYPTO
 source "arch/arm64/crypto/Kconfig"
 endif
-
-config PERF_AFFINITY
-	bool "Performance cluster affinity for graphics workers and IRQs"
-	depends on ARCH_KONA && SMP
-	help
-	  Prefer the performance CPU clusters for selected graphics workers
-	  and interrupts, restoring placement after CPU hotplug or resume.
-	  Offline clusters fall back to the normal online CPUs.
