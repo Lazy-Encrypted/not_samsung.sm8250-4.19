@@ -6533,19 +6533,14 @@ static inline void hrtick_update(struct rq *rq)
 #endif
 
 #ifdef CONFIG_SMP
-bool __cpu_overutilized(int cpu, int delta)
+bool cpu_overutilized(int cpu)
 {
 	unsigned long rq_util_max;
-	unsigned long util = max_t(long, 0, (long)cpu_util(cpu) + delta);
 
 	rq_util_max = uclamp_rq_get(cpu_rq(cpu), UCLAMP_MAX);
 
-	return !util_fits_cpu(util, 0, rq_util_max, cpu);
-}
-
-bool cpu_overutilized(int cpu)
-{
-	return __cpu_overutilized(cpu, 0);
+	/* Return true only if the utilization doesn't fit CPU's capacity */
+	return !util_fits_cpu(cpu_util(cpu), 0, rq_util_max, cpu);
 }
 
 #ifdef CONFIG_SCHED_WALT
