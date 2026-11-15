@@ -40,7 +40,6 @@
  * OF THIS SOFTWARE.
  */
 
-#include <linux/perf_affinity.h>
 #include <linux/of_address.h>
 #include <linux/kthread.h>
 #include <linux/suspend.h>
@@ -425,12 +424,6 @@ static int msm_drm_uninit(struct device *dev)
 		}
 	}
 
-	if (priv->pp_event_thread) {
-		kthread_flush_worker(&priv->pp_event_worker);
-		kthread_stop(priv->pp_event_thread);
-		priv->pp_event_thread = NULL;
-	}
-
 	drm_kms_helper_poll_fini(ddev);
 
 	drm_mode_config_cleanup(ddev);
@@ -624,80 +617,97 @@ static int msm_drm_pm_notifier(struct notifier_block *notifier,
 	return NOTIFY_DONE;
 }
 
-static int msm_drm_display_thread_create(struct msm_drm_private *priv,
-		struct drm_device *ddev, struct device *dev)
+static int msm_drm_display_thread_create(struct msm_drm_private *priv, struct drm_device *ddev,
+	struct device *dev)
 {
-	int i, ret;
+	int i, ret = 0;
 
 	for (i = 0; i < priv->num_crtcs; i++) {
+		/* initialize display thread */
 		priv->disp_thread[i].crtc_id = priv->crtcs[i]->base.id;
 		kthread_init_worker(&priv->disp_thread[i].worker);
 		priv->disp_thread[i].dev = ddev;
-		priv->disp_thread[i].thread = kthread_run(kthread_worker_fn,
-			&priv->disp_thread[i].worker, "crtc_commit:%d",
-			priv->disp_thread[i].crtc_id);
-		if (IS_ERR(priv->disp_thread[i].thread)) {
-			ret = PTR_ERR(priv->disp_thread[i].thread);
-			priv->disp_thread[i].thread = NULL;
-			goto fail;
-		}
-		kthread_set_perf_affinity(priv->disp_thread[i].thread,
-					  cpu_prime_mask);
+		priv->disp_thread[i].thread =
+			kthread_run(kthread_worker_fn,
+				&priv->disp_thread[i].worker,
+				"crtc_commit:%d", priv->disp_thread[i].crtc_id);
 		kthread_init_work(&priv->thread_priority_work,
-			msm_drm_display_thread_priority_worker);
-		kthread_queue_work(&priv->disp_thread[i].worker,
-				   &priv->thread_priority_work);
+				  msm_drm_display_thread_priority_worker);
+		kthread_queue_work(&priv->disp_thread[i].worker, &priv->thread_priority_work);
 		kthread_flush_work(&priv->thread_priority_work);
 
+		if (IS_ERR(priv->disp_thread[i].thread)) {
+			dev_err(dev, "failed to create crtc_commit kthread\n");
+			priv->disp_thread[i].thread = NULL;
+		}
+
+		/* initialize event thread */
 		priv->event_thread[i].crtc_id = priv->crtcs[i]->base.id;
 		kthread_init_worker(&priv->event_thread[i].worker);
 		priv->event_thread[i].dev = ddev;
-		priv->event_thread[i].thread = kthread_run(kthread_worker_fn,
-			&priv->event_thread[i].worker, "crtc_event:%d",
-			priv->event_thread[i].crtc_id);
-		if (IS_ERR(priv->event_thread[i].thread)) {
-			ret = PTR_ERR(priv->event_thread[i].thread);
-			priv->event_thread[i].thread = NULL;
-			goto fail;
-		}
-		/* Event handling must retain the same FIFO priority as commits. */
-		kthread_set_perf_affinity(priv->event_thread[i].thread,
-					  cpu_prime_mask);
+		priv->event_thread[i].thread =
+			kthread_run(kthread_worker_fn,
+				&priv->event_thread[i].worker,
+				"crtc_event:%d", priv->event_thread[i].crtc_id);
+		/**
+		 * event thread should also run at same priority as disp_thread
+		 * because it is handling frame_done events. A lower priority
+		 * event thread and higher priority disp_thread can causes
+		 * frame_pending counters beyond 2. This can lead to commit
+		 * failure at crtc commit level.
+		 */
 		kthread_init_work(&priv->thread_priority_work,
-			msm_drm_display_thread_priority_worker);
-		kthread_queue_work(&priv->event_thread[i].worker,
-				   &priv->thread_priority_work);
+				  msm_drm_display_thread_priority_worker);
+		kthread_queue_work(&priv->event_thread[i].worker, &priv->thread_priority_work);
 		kthread_flush_work(&priv->thread_priority_work);
+
+		if (IS_ERR(priv->event_thread[i].thread)) {
+			dev_err(dev, "failed to create crtc_event kthread\n");
+			priv->event_thread[i].thread = NULL;
+		}
+
+		if ((!priv->disp_thread[i].thread) ||
+				!priv->event_thread[i].thread) {
+			/* clean up previously created threads if any */
+			for ( ; i >= 0; i--) {
+				if (priv->disp_thread[i].thread) {
+					kthread_stop(
+						priv->disp_thread[i].thread);
+					priv->disp_thread[i].thread = NULL;
+				}
+
+				if (priv->event_thread[i].thread) {
+					kthread_stop(
+						priv->event_thread[i].thread);
+					priv->event_thread[i].thread = NULL;
+				}
+			}
+			return -EINVAL;
+		}
 	}
 
+	/**
+	 * Since pp interrupt is heavy weight, try to queue the work
+	 * into a dedicated worker thread, so that they dont interrupt
+	 * other important events.
+	 */
 	kthread_init_worker(&priv->pp_event_worker);
 	priv->pp_event_thread = kthread_run(kthread_worker_fn,
-		&priv->pp_event_worker, "pp_event");
-	if (IS_ERR(priv->pp_event_thread)) {
-		ret = PTR_ERR(priv->pp_event_thread);
-		priv->pp_event_thread = NULL;
-		goto fail;
-	}
-	kthread_set_perf_affinity(priv->pp_event_thread, cpu_prime_mask);
-	kthread_init_work(&priv->thread_priority_work,
-		msm_drm_display_thread_priority_worker);
+			&priv->pp_event_worker, "pp_event");
+
+	kthread_init_work(&priv->thread_priority_work, msm_drm_display_thread_priority_worker);
 	kthread_queue_work(&priv->pp_event_worker, &priv->thread_priority_work);
 	kthread_flush_work(&priv->thread_priority_work);
+
+	if (IS_ERR(priv->pp_event_thread)) {
+		dev_err(dev, "failed to create pp_event kthread\n");
+		ret = PTR_ERR(priv->pp_event_thread);
+		priv->pp_event_thread = NULL;
+		return ret;
+	}
+
 	return 0;
 
-fail:
-	dev_err(dev, "failed to create display worker: %d\n", ret);
-	for (i = 0; i < priv->num_crtcs; i++) {
-		if (priv->disp_thread[i].thread) {
-			kthread_stop(priv->disp_thread[i].thread);
-			priv->disp_thread[i].thread = NULL;
-		}
-		if (priv->event_thread[i].thread) {
-			kthread_stop(priv->event_thread[i].thread);
-			priv->event_thread[i].thread = NULL;
-		}
-	}
-	return ret;
 }
 
 static struct msm_kms *_msm_drm_init_helper(struct msm_drm_private *priv,
@@ -1000,8 +1010,6 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 			dev_err(dev, "failed to install IRQ handler\n");
 			goto fail;
 		}
-		if (irq_set_perf_affinity(ddev->irq, cpu_prime_mask))
-			dev_warn(dev, "Unable to prefer prime CPU for display IRQ\n");
 	}
 
 	ret = drm_dev_register(ddev, 0);
