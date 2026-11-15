@@ -196,6 +196,14 @@ config BACKLIGHT_EP93XX
 	  To compile this driver as a module, choose M here: the module will
 	  be called ep93xx_bl.
 
+config OPLUS_BACKLIGHT_NODE
+	bool "ColorOS backlight compatibility node"
+	depends on BACKLIGHT_CLASS_DEVICE=y
+	help
+	  Provide /sys/touchpanel/oplus_backlight for userspace expecting the
+	  ColorOS brightness range of 0 to 8191. Values are mapped to the
+	  native range of panel0-backlight through the backlight core.
+
 config BACKLIGHT_GENERIC
 	tristate "Generic (aka Sharp Corgi) Backlight Driver"
 	default y

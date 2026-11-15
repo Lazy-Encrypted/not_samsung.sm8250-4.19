@@ -1881,14 +1881,6 @@ if CRYPTO
 source "arch/arm64/crypto/Kconfig"
 endif
 
-config PAPER_OPLUS_BACKLIGHT
-	bool "Support Oplus backlight through the SDE primary panel"
-	depends on ARCH_KONA && DRM && TOUCHSCREEN_COMMON
-	depends on BACKLIGHT_CLASS_DEVICE=y
-	help
-	  Provide the Oplus brightness interface through the primary SDE
-	  backlight device using the 222..8191 input brightness curve.
-
 config PERF_AFFINITY
 	bool "Performance cluster affinity for graphics workers and IRQs"
 	depends on ARCH_KONA && SMP

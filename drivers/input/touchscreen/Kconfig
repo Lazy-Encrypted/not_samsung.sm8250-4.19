@@ -1370,10 +1370,4 @@ source "drivers/input/touchscreen/focaltech_touch/Kconfig"
 
 source "drivers/input/touchscreen/nt36xxx/Kconfig"
 
-config TOUCHSCREEN_COMMON
-	bool "Common touchscreen interface to interact with userspace"
-	help
-	  Provide the /sys/touchpanel object for registered touchpanel
-	  compatibility interfaces.
-
 endif

@@ -12,9 +12,6 @@
 #include "sde_connector.h"
 #include "sde_encoder.h"
 #include <linux/backlight.h>
-#ifdef CONFIG_PAPER_OPLUS_BACKLIGHT
-#include <linux/input/tp_common.h>
-#endif
 #include <linux/string.h>
 #include "dsi_drm.h"
 #include "dsi_display.h"
@@ -132,76 +129,6 @@ static const struct backlight_ops sde_backlight_device_ops = {
 	.update_status = sde_backlight_device_update_status,
 	.get_brightness = sde_backlight_device_get_brightness,
 };
-
-#ifdef CONFIG_PAPER_OPLUS_BACKLIGHT
-#define OPLUS_BL_DEVICE "panel0-backlight"
-
-static unsigned int oplus_backlight_cover(unsigned int value)
-{
-	if (value <= 222)
-		return 1;
-	if (value >= 8191)
-		return 4095;
-
-	return ((value - 222) * 4094 * 2 + 7969) / (7969 * 2) + 1;
-}
-
-static ssize_t oplus_backlight_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	/* Keep the original donor's empty read interface. */
-	return 0;
-}
-
-static ssize_t oplus_backlight_store(struct kobject *kobj,
-		struct kobj_attribute *attr, const char *buf, size_t count)
-{
-	struct backlight_device *bd;
-	unsigned int value, brightness;
-	int maximum, ret;
-	char input[32];
-	size_t len = count;
-
-	if (!len || len >= sizeof(input) || memchr(buf, '\0', len))
-		return -EINVAL;
-	memcpy(input, buf, len);
-	input[len] = '\0';
-	if (input[len - 1] == '\n')
-		input[--len] = '\0';
-	if (len >= 2 && input[len - 2] == '.' && input[len - 1] == '0')
-		input[len - 2] = '\0';
-	if (kstrtouint(input, 10, &value))
-		return -EINVAL;
-
-	bd = backlight_device_get_by_name(OPLUS_BL_DEVICE);
-	if (!bd)
-		return -ENODEV;
-	maximum = READ_ONCE(bd->props.max_brightness);
-	if (maximum <= 0) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	value = oplus_backlight_cover(value);
-	/* SDE takes UI units; Samsung's native maximum need not be 4095. */
-	brightness = DIV_ROUND_CLOSEST_ULL((u64)value * maximum, 4095);
-	brightness = max(brightness, 1U);
-	bd->usr_brightness_req = brightness;
-	brightness = min(brightness,
-		(unsigned int)max(READ_ONCE(bd->thermal_brightness_limit), 0));
-	ret = backlight_device_set_brightness(bd, brightness);
-out:
-	put_device(&bd->dev);
-	if (ret)
-		return ret;
-	return count;
-}
-
-static const struct tp_common_ops oplus_backlight_ops = {
-	.show = oplus_backlight_show,
-	.store = oplus_backlight_store,
-};
-#endif
 
 static int sde_backlight_setup(struct sde_connector *c_conn,
 					struct drm_device *dev)
@@ -1115,13 +1042,6 @@ void sde_connector_destroy(struct drm_connector *connector)
 	}
 
 	c_conn = to_sde_connector(connector);
-#ifdef CONFIG_PAPER_OPLUS_BACKLIGHT
-	/* Drain sysfs callbacks before the panel or connector is torn down. */
-	if (c_conn->bl_device &&
-	    !strcmp(dev_name(&c_conn->bl_device->dev), OPLUS_BL_DEVICE))
-		tp_common_remove_oplus_backlight_ops();
-#endif
-
 
 	/* cancel if any pending esd work */
 	sde_connector_schedule_status_work(connector, false);
@@ -2905,15 +2825,6 @@ struct drm_connector *sde_connector_init(struct drm_device *dev,
 	INIT_DELAYED_WORK(&c_conn->status_work,
 			sde_connector_check_status_work);
 
-#ifdef CONFIG_PAPER_OPLUS_BACKLIGHT
-	if (c_conn->bl_device &&
-	    !strcmp(dev_name(&c_conn->bl_device->dev), OPLUS_BL_DEVICE)) {
-		int ret = tp_common_set_oplus_backlight_ops(&oplus_backlight_ops);
-
-		if (ret)
-			SDE_ERROR("Failed to register Oplus backlight: %d\n", ret);
-	}
-#endif
 	return &c_conn->base;
 
 error_destroy_property:

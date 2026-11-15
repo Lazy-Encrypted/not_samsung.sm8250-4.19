@@ -1,18 +1,16 @@
 What:		/sys/touchpanel/oplus_backlight
 Date:		October 2026
 Description:
-		Oplus brightness compatibility interface from commit
-		6c443046467af318d998bab2daeb017ffbbeee14, adapted to SDE.
-		Requires CONFIG_TOUCHSCREEN_COMMON and CONFIG_PAPER_OPLUS_BACKLIGHT.
-		The attribute is registered after panel0-backlight and removed
-		before that panel's backlight is unregistered. Reads return EOF.
+		ColorOS brightness compatibility interface, enabled by
+		CONFIG_OPLUS_BACKLIGHT_NODE. Reads report the requested brightness
+		of panel0-backlight scaled to 0..8191, not measured panel luminance.
 
-		Writes accept unsigned decimal integers, optionally suffixed with
-		".0" and a newline. Values <= 222 map to code 1, values >= 8191
-		map to 4095, with rounded linear interpolation in between.
-		Zero therefore requests minimum brightness, as in the donor.
-		Codes are normalized to the native panel brightness maximum;
-		thermal limits and panel blanking/suspend remain in effect.
+		Writes accept unsigned decimal integers, optionally followed by
+		".0" and a newline. Values above 8191 are clamped to 8191.
+		The value is scaled to the native maximum; a nonzero input maps
+		to at least one native brightness step. Zero requests zero.
 
-		Invalid input returns EINVAL; absent panel returns ENODEV.
-		Backlight update errors are propagated to the writer.
+		Writes use the backlight core's normal update path and return
+		its error if the update fails. Reads and writes return ENODEV
+		when panel0-backlight is absent, or EINVAL for an invalid native
+		maximum. Invalid input also returns EINVAL.
