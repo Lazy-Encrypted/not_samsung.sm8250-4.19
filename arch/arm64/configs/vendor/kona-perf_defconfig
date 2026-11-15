@@ -779,7 +779,7 @@ CONFIG_SECURITY_SELINUX=y
 # CONFIG_SECURITY_SELINUX_AVC_STATS is not set
 # CONFIG_INTEGRITY is not set
 CONFIG_LSM="lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
-CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y
+# CONFIG_INIT_ON_ALLOC_DEFAULT_ON is not set
 CONFIG_LIST_HARDENED=y
 CONFIG_CRYPTO_CCM=y
 CONFIG_CRYPTO_GCM=y
