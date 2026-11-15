@@ -59,7 +59,7 @@ config ZRAM_BACKEND_LZO
 
 choice
 	prompt "Default zram compressor"
-	default ZRAM_DEF_COMP_LZ4P if ZRAM_LZ4P
+	default ZRAM_DEF_COMP_LZ4 if ZRAM_BACKEND_LZ4
 	default ZRAM_DEF_COMP_LZORLE
 	depends on ZRAM
 
