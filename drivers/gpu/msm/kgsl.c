@@ -17,7 +17,6 @@
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/pm_runtime.h>
-#include <linux/perf_affinity.h>
 #include <linux/security.h>
 #include <linux/sort.h>
 #include <asm/cacheflush.h>
@@ -5484,10 +5483,6 @@ int kgsl_request_irq(struct platform_device *pdev, const  char *name,
 		dev_err(&pdev->dev, "Unable to get interrupt %s: %d\n",
 			name, ret);
 
-	if (!ret && !strcmp(name, "kgsl_3d0_irq") &&
-	    irq_set_perf_affinity(num, cpu_perf_mask))
-		dev_warn(&pdev->dev, "Unable to prefer big CPUs for %s\n", name);
-
 	return ret ? ret : num;
 }
 
@@ -5682,8 +5677,6 @@ static struct notifier_block kgsl_sharedmem_size_nb = {
 
 static void kgsl_core_exit(void)
 {
-	if (!IS_ERR_OR_NULL(kgsl_driver.worker_thread))
-		kthread_clear_perf_affinity(kgsl_driver.worker_thread);
 	kgsl_events_exit();
 	kgsl_core_debugfs_close();
 
@@ -5794,11 +5787,9 @@ static int __init kgsl_core_init(void)
 		&kgsl_driver.worker, "kgsl_worker_thread");
 
 	if (IS_ERR(kgsl_driver.worker_thread)) {
-		result = PTR_ERR(kgsl_driver.worker_thread);
 		pr_err("kgsl: unable to start kgsl thread\n");
 		goto err;
 	}
-	kthread_set_perf_affinity(kgsl_driver.worker_thread, cpu_perf_mask);
 
 	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
 
