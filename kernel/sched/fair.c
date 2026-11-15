@@ -10536,14 +10536,17 @@ skip_unlock: __attribute__ ((unused));
 	 * and use it as-is, approximate_util_avg() will then let us know the
 	 * our threshold.
 	 *
-	 * Both the predicted runtime and the tick interval use microseconds.
+	 * Multiply approximate runtime of dynamic capacity by 1024 (the PELT
+	 * period constant) rather than USEC_PER_MSEC (1000) for accurate
+	 * period-to-microsecond conversion. Each iteration of approximate_runtime()
+	 * advances by delta = 1024 PELT units ~ 1024 us.
 	 *
 	 * On very slow or heavily throttled CPUs, the ramp-up time can be shorter
 	 * than one tick interval, which would cause limit to wrap to a huge u64
 	 * value and make fits_capacity_threshold incorrectly equal to
 	 * SCHED_CAPACITY_SCALE. So, add a safe subtraction.
 	 */
-	limit = approximate_runtime_us(capacity);
+	limit = approximate_runtime(capacity) * 1024ULL;
 	lsub_positive(&limit, TICK_USEC);	/* sd->balance_interval is more accurate */
 	rq->fits_capacity_threshold = approximate_util_avg(0, limit);
 
