@@ -7856,7 +7856,11 @@ if (unlikely(!walt_eas_valid_cpu(rd->min_cap_orig_cpu) ||
     !walt_eas_valid_cpu(rd->max_cap_orig_cpu) ||
     (rd->mid_cap_orig_cpu != -1 &&
      !walt_eas_valid_cpu(rd->mid_cap_orig_cpu)))) {
-    return -1;
+_ratelimited(
+invalid capacity CPU tiers: min=%d mid=%d max=%d nr=%d\\n",
+_cap_orig_cpu, rd->mid_cap_orig_cpu,
+nr_cpu_ids);
+ -1;
 }
 
 	/*
@@ -8716,7 +8720,10 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 
 #ifdef CONFIG_SCHED_WALT
 if (unlikely(!walt_eas_valid_cpu(start_cpu))) {
-    goto eas_not_ready;
+_ratelimited(
+invalid start CPU=%d prev=%d nr=%d\\n",
+prev_cpu, nr_cpu_ids);
+eas_not_ready;
 }
 #endif
 
