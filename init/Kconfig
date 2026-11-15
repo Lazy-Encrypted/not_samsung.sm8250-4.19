@@ -491,14 +491,6 @@ config IRQ_TIME_ACCOUNTING
 
 	  If in doubt, say N here.
 
-config SCHED_WALT
-	bool "Support window based load tracking"
-	depends on SMP && ARM64
-	help
-	  Maintain window based metrics for tasks and runqueues. Use these
-	  metrics for task placement and utilization driven CPU frequency
-	  selection on Qualcomm ARM64 systems.
-
 config HAVE_SCHED_AVG_IRQ
 	def_bool y
 	depends on IRQ_TIME_ACCOUNTING || PARAVIRT_TIME_ACCOUNTING
@@ -865,7 +857,6 @@ endchoice
 
 config PELT_COMPATIBILITY_LAYER
 	bool "Compatibility layer for Qualcomm performance HALs"
-	depends on !SCHED_WALT
 	help
 	  This option enables a non-operational compatibility layer for use in
 	  lieu of Window Assisted Load Tracking on systems which expect it.
@@ -1270,7 +1261,7 @@ config CHECKPOINT_RESTORE
 
 config SCHED_CASS
 	bool "Capacity Aware Superset Scheduler"
-	depends on SMP && !SCHED_WALT
+	depends on SMP
 	help
 	  This enables the Capacity Aware Superset Scheduler (CASS), which
 	  optimizes runqueue selection of CFS tasks. By using CPU capacity as a
