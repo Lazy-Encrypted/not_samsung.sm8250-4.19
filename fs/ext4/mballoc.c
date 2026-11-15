@@ -4996,7 +4996,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
 ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
 				struct ext4_allocation_request *ar, int *errp)
 {
-	int retries = 0;
+	int freed;
 	struct ext4_allocation_context *ac = NULL;
 	struct ext4_sb_info *sbi;
 	struct super_block *sb;
@@ -5095,8 +5095,8 @@ repeat:
 			ar->len = ac->ac_b_ex.fe_len;
 		}
 	} else {
-		if (++retries < 3 &&
-		    ext4_mb_discard_preallocations(sb, ac->ac_o_ex.fe_len))
+		freed  = ext4_mb_discard_preallocations(sb, ac->ac_o_ex.fe_len);
+		if (freed)
 			goto repeat;
 		*errp = -ENOSPC;
 	}
