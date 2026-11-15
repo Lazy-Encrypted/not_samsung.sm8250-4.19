@@ -79,9 +79,6 @@ struct irq_desc {
 	const struct cpumask	*percpu_affinity;
 #ifdef CONFIG_SMP
 	const struct cpumask	*affinity_hint;
-#ifdef CONFIG_PERF_AFFINITY
-	const struct cpumask	*perf_affinity;
-#endif
 	struct irq_affinity_notify *affinity_notify;
 #ifdef CONFIG_GENERIC_PENDING_IRQ
 	cpumask_var_t		pending_mask;
@@ -103,7 +100,6 @@ struct irq_desc {
 	struct dentry		*debugfs_file;
 	const char		*dev_name;
 #endif
-
 #ifdef CONFIG_SPARSE_IRQ
 	struct rcu_head		rcu;
 	struct kobject		kobj;
@@ -113,16 +109,6 @@ struct irq_desc {
 	struct module		*owner;
 	const char		*name;
 } ____cacheline_internodealigned_in_smp;
-
-static inline const struct cpumask *irq_get_perf_affinity(struct irq_desc *desc)
-{
-#ifdef CONFIG_PERF_AFFINITY
-	return READ_ONCE(desc->perf_affinity);
-#else
-	return NULL;
-#endif
-}
-
 
 #ifdef CONFIG_SPARSE_IRQ
 extern void irq_lock_sparse(void);

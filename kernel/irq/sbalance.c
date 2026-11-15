@@ -150,9 +150,7 @@ static int move_irq_to_cpu(struct bal_irq *bi, int cpu)
 	/* Set the affinity if it wasn't changed since we looked at it */
 	raw_spin_lock_irq(&desc->lock);
 	prev_cpu = cpumask_first(desc->irq_common_data.affinity);
-	if (irq_get_perf_affinity(desc)) {
-		ret = -EBUSY;
-	} else if (prev_cpu == bi->prev_cpu) {
+	if (prev_cpu == bi->prev_cpu) {
 		ret = irq_set_affinity_locked(&desc->irq_data, cpumask_of(cpu),
 					      false);
 	} else {
@@ -247,8 +245,7 @@ static void balance_irqs(void)
 
 	list_for_each_entry_rcu(bi, &bal_irq_list, node) {
 		/* Consider this IRQ for balancing if it's movable */
-		if (!__irq_can_set_affinity(bi->desc) ||
-		    irq_get_perf_affinity(bi->desc))
+		if (!__irq_can_set_affinity(bi->desc))
 			continue;
 
 		if (!update_irq_data(bi, &cpu))

@@ -9,7 +9,6 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/kthread.h>
-#include <linux/perf_affinity.h>
 #include <linux/completion.h>
 #include <linux/err.h>
 #include <linux/cgroup.h>
@@ -579,7 +578,6 @@ int kthread_stop(struct task_struct *k)
 	trace_sched_kthread_stop(k);
 
 	get_task_struct(k);
-	kthread_clear_perf_affinity(k);
 	kthread = to_kthread(k);
 	set_bit(KTHREAD_SHOULD_STOP, &kthread->flags);
 	kthread_unpark(k);

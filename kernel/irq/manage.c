@@ -10,7 +10,6 @@
 
 #include <linux/irq.h>
 #include <linux/kthread.h>
-#include <linux/perf_affinity.h>
 #include <linux/module.h>
 #include <linux/random.h>
 #include <linux/interrupt.h>
@@ -174,8 +173,7 @@ bool irq_can_set_affinity_usr(unsigned int irq)
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	return __irq_can_set_affinity(desc) &&
-		!irqd_affinity_is_managed(&desc->irq_data) &&
-		!irq_get_perf_affinity(desc);
+		!irqd_affinity_is_managed(&desc->irq_data);
 }
 
 /**
@@ -452,71 +450,13 @@ irq_set_affinity_notifier(unsigned int irq, struct irq_affinity_notify *notify)
 }
 EXPORT_SYMBOL_GPL(irq_set_affinity_notifier);
 
-#ifdef CONFIG_PERF_AFFINITY
-/* desc->lock is held; the IRQ core handles its threaded handler as well. */
-static int irq_apply_perf_affinity(struct irq_desc *desc,
-				   const struct cpumask *mask)
-{
-	unsigned int cpu = cpumask_first_and(mask, cpu_online_mask);
-
-	if (cpu >= nr_cpu_ids)
-		cpu = cpumask_first(cpu_online_mask);
-	if (cpu >= nr_cpu_ids)
-		return -EINVAL;
-	return irq_set_affinity_locked(&desc->irq_data, cpumask_of(cpu), false);
-}
-
-int irq_set_perf_affinity(unsigned int irq, const struct cpumask *mask)
-{
-	struct irq_desc *desc = irq_to_desc(irq);
-	unsigned long flags;
-	int ret = -EINVAL;
-
-	if (!READ_ONCE(perf_affinity_ready))
-		return -EOPNOTSUPP;
-	/* Masks have static lifetime; never retain a caller's temporary mask. */
-	if (!desc || (mask != cpu_perf_mask && mask != cpu_prime_mask))
-		return -EINVAL;
-	raw_spin_lock_irqsave(&desc->lock, flags);
-	if (__irq_can_set_affinity(desc) && desc->action &&
-	    !irqd_affinity_is_managed(&desc->irq_data)) {
-		ret = irq_apply_perf_affinity(desc, mask);
-		if (!ret)
-			WRITE_ONCE(desc->perf_affinity, mask);
-	}
-	raw_spin_unlock_irqrestore(&desc->lock, flags);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(irq_set_perf_affinity);
-
-void irq_reapply_perf_affinity(void)
-{
-	struct irq_desc *desc;
-	unsigned int irq;
-	unsigned long flags;
-
-	irq_lock_sparse();
-	for_each_active_irq(irq) {
-		desc = irq_to_desc(irq);
-		if (!desc)
-			continue;
-		raw_spin_lock_irqsave(&desc->lock, flags);
-		if (desc->perf_affinity && desc->action &&
-		    cpumask_intersects(desc->perf_affinity, cpu_online_mask))
-			irq_apply_perf_affinity(desc, desc->perf_affinity);
-		raw_spin_unlock_irqrestore(&desc->lock, flags);
-	}
-	irq_unlock_sparse();
-}
-#endif
-
 #ifndef CONFIG_AUTO_IRQ_AFFINITY
 /*
  * Generic version of the affinity autoselector.
  */
 int irq_setup_affinity(struct irq_desc *desc)
 {
-	const struct cpumask *set = irq_default_affinity;
+	struct cpumask *set = irq_default_affinity;
 	int ret, node = irq_desc_get_node(desc);
 	static DEFINE_RAW_SPINLOCK(mask_lock);
 	static struct cpumask mask;
@@ -539,8 +479,6 @@ int irq_setup_affinity(struct irq_desc *desc)
 			irqd_clear(&desc->irq_data, IRQD_AFFINITY_SET);
 	}
 
-	if (irq_get_perf_affinity(desc))
-		set = irq_get_perf_affinity(desc);
 	cpumask_and(&mask, cpu_online_mask, set);
 	if (cpumask_empty(&mask))
 		cpumask_copy(&mask, cpu_online_mask);
@@ -1769,9 +1707,6 @@ static struct irqaction *__free_irq(struct irq_desc *desc, void *dev_id)
 
 	/* If this was the last handler, shut down the IRQ line: */
 	if (!desc->action) {
-#ifdef CONFIG_PERF_AFFINITY
-		WRITE_ONCE(desc->perf_affinity, NULL);
-#endif
 		irq_settings_clr_disable_unlazy(desc);
 		/* Only shutdown. Deactivate after synchronize_hardirq() */
 		irq_shutdown(desc);

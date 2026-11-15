@@ -147,5 +147,3 @@ $(obj)/kheaders_data.tar.xz: FORCE
 clean-files := kheaders_data.tar.xz kheaders.md5
 
 ccflags-y += -Wno-incompatible-pointer-types
-
-obj-$(CONFIG_PERF_AFFINITY) += perf_affinity.o
