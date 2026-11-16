@@ -872,7 +872,7 @@ response_time_ms_store(struct gov_attr_set *attr_set, const char *buf, size_t co
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
 		if (sg_policy->tunables == tunables) {
 			sugov_update_response_time_mult(sg_policy);
-			/* Atualizar todas as políticas associadas. */
+			/* update all associated policies*/
 		}
 	}
 
