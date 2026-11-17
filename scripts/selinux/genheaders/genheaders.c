@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
 	int isids_len;
 	FILE *fout;
 	const char *needle = "SOCKET";
-	char *substr;
+	const char *substr;
 
 	progname = argv[0];
 

@@ -413,7 +413,8 @@ static void tokenise(char *buffer, char *end)
 
 			/* Handle string tokens */
 			if (isalpha(*p)) {
-				const char **dir, *start = p;
+				const char **dir;
+				const char *start = p;
 
 				/* Can be a directive, type name or element
 				 * name.  Find the end of the name.
@@ -443,7 +444,7 @@ static void tokenise(char *buffer, char *end)
 				/* Otherwise we need to search the directive
 				 * table
 				 */
-				dir = bsearch(&tokens[tix], directives,
+				dir = (const char **)bsearch(&tokens[tix], directives,
 					      sizeof(directives) / sizeof(directives[1]),
 					      sizeof(directives[1]),
 					      directive_compare);
@@ -633,7 +634,7 @@ int main(int argc, char **argv)
 		perror(NULL);
 		exit(1);
 	}
-	p = strchr(grammar_name, '.');
+	p = (char *)strchr(grammar_name, '.');
 	if (p)
 		*p = '\0';
 

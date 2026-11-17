@@ -793,7 +793,7 @@ int conf_write(const char *name)
 
 	dirname[0] = 0;
 	if (name && name[0]) {
-		char *slash;
+		const char *slash;
 
 		if (is_dir(name)) {
 			strcpy(dirname, name);
