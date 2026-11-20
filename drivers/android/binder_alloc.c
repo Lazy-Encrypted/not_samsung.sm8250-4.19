@@ -249,39 +249,49 @@ static int binder_install_single_page(struct binder_alloc *alloc,
 		return -ESRCH;
 
 	/*
-	 * Protected with mmap_lock in write mode as multiple tasks
-	 * might race to install the same page.
+	 * Serialize installers without holding mmap_lock across allocation.
+	 * This also avoids duplicate allocations and reclaim when multiple
+	 * transactions need the same page.
 	 */
-	down_write(&alloc->vma_vm_mm->mmap_lock);
+	mutex_lock(&alloc->install_mutex);
 	if (binder_get_installed_page(lru_page))
-		goto out;
-
-	if (!alloc->vma) {
-		pr_err("%d: %s failed, no vma\n", alloc->pid, __func__);
-		ret = -ESRCH;
-		goto out;
-	}
+		goto unlock_install;
 
 	page = alloc_page(GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO);
 	if (!page) {
 		pr_err("%d: failed to allocate page\n", alloc->pid);
 		ret = -ENOMEM;
-		goto out;
+		goto unlock_install;
+	}
+
+	/* Keep VMA validation and page installation serialized with munmap. */
+	down_write(&alloc->vma_vm_mm->mmap_lock);
+	if (binder_get_installed_page(lru_page))
+		goto unlock_mmap;
+
+	if (!alloc->vma) {
+		pr_err("%d: %s failed, no vma\n", alloc->pid, __func__);
+		ret = -ESRCH;
+		goto unlock_mmap;
 	}
 
 	ret = vm_insert_page(alloc->vma, addr, page);
 	if (ret) {
 		pr_err("%d: %s failed to insert page at offset %lx with %d\n",
 		       alloc->pid, __func__, addr - alloc->buffer, ret);
-		__free_page(page);
 		ret = -ENOMEM;
-		goto out;
+		goto unlock_mmap;
 	}
 
 	/* Mark page installation complete and safe to use */
 	binder_set_installed_page(lru_page, page);
-out:
+	page = NULL;
+unlock_mmap:
 	up_write(&alloc->vma_vm_mm->mmap_lock);
+	if (page)
+		__free_page(page);
+unlock_install:
+	mutex_unlock(&alloc->install_mutex);
 	mmput_async(alloc->vma_vm_mm);
 	return ret;
 }
@@ -1186,6 +1196,7 @@ void binder_alloc_init(struct binder_alloc *alloc)
 {
 	alloc->pid = current->group_leader->pid;
 	spin_lock_init(&alloc->lock);
+	mutex_init(&alloc->install_mutex);
 	INIT_LIST_HEAD(&alloc->buffers);
 }
 

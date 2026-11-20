@@ -9,6 +9,7 @@
 #include <linux/rbtree.h>
 #include <linux/list.h>
 #include <linux/mm.h>
+#include <linux/mutex.h>
 #include <linux/spinlock.h>
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
@@ -87,6 +88,7 @@ struct binder_lru_page {
  *                      initialized at mmap time to 1/2 the full VA space
  * @pages:              array of binder_lru_page
  * @buffer_size:        size of address space specified via mmap
+ * @install_mutex:      serializes page allocation and installation
  * @pid:                pid for associated binder_proc (invariant after init)
  * @pages_high:         high watermark of offset in @pages
  * @oneway_spam_detected: %true if oneway spam detection fired, clear that
@@ -99,6 +101,7 @@ struct binder_lru_page {
  */
 struct binder_alloc {
 	spinlock_t lock;
+	struct mutex install_mutex;
 	struct vm_area_struct *vma;
 	struct mm_struct *vma_vm_mm;
 	unsigned long buffer;
