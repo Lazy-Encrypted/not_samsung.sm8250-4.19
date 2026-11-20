@@ -8227,8 +8227,8 @@ static u64 cpu_uclamp_ls_read_u64(struct cgroup_subsys_state *css,
 #ifdef CONFIG_UCLAMP_ASSIST
 struct uclamp_param {
 	char *name;
-	char uclamp_min[3];
-	char uclamp_max[3];
+	char uclamp_min[4];
+	char uclamp_max[4];
 	u64  uclamp_latency_sensitive;
 };
 
