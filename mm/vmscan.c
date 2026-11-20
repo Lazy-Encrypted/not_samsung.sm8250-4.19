@@ -4996,7 +4996,9 @@ static int shrink_one(struct lruvec *lruvec, struct scan_control *sc)
 	if (!lruvec_is_sizable(lruvec, sc))
 		return seg != MEMCG_LRU_TAIL ? MEMCG_LRU_TAIL : MEMCG_LRU_YOUNG;
 
-	/* lru_gen_age_node() called mem_cgroup_calculate_protection() */
+	/* kswapd calculated protection in its top-down aging walk. */
+	if (!current_is_kswapd())
+		mem_cgroup_protection_path(NULL, memcg);
 
 	if (mem_cgroup_below_min(NULL, memcg))
 		return MEMCG_LRU_YOUNG;
