@@ -102,17 +102,21 @@ static void ion_page_pool_add(struct ion_page_pool *pool, struct page *page)
 void ion_page_pool_refill(struct ion_page_pool *pool)
 {
 	struct page *page;
-	gfp_t gfp_refill = (pool->gfp_mask | __GFP_RECLAIM) & ~__GFP_NORETRY;
+	gfp_t gfp_refill = (pool->gfp_mask | __GFP_NORETRY | __GFP_NOWARN) &
+			   ~__GFP_RECLAIM;
 	struct device *dev = pool->dev;
 
 	/* skip refilling order 0 pools */
 	if (!pool->order)
 		return;
 
+	/* Speculative refill must not reclaim or compact to populate a cache. */
 	while (!pool_fillmark_reached(pool) && pool_refill_ok(pool)) {
 		page = alloc_pages(gfp_refill, pool->order);
-		if (!page)
+		if (!page) {
+			pool->last_low_watermark_ktime = ktime_get();
 			break;
+		}
 		if (!pool->cached)
 			ion_pages_sync_for_device(dev, page,
 						  PAGE_SIZE << pool->order,
