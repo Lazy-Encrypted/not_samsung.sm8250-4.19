@@ -8728,8 +8728,24 @@ static void ufshcd_rls_handler(struct work_struct *work)
 
 	hba = container_of(work, struct ufs_hba, rls_work);
 
-	pm_runtime_get_sync(hba->dev);
-	down_write(&hba->lock);
+	ret = pm_runtime_get_sync(hba->dev);
+	if (ret < 0) {
+		pm_runtime_put_noidle(hba->dev);
+		return;
+	}
+
+	/*
+	 * Link recovery can wait for error handling on this workqueue
+	 * while holding hba->lock. Retry without blocking on the lock.
+	 */
+	if (!down_write_trylock(&hba->lock)) {
+		pm_runtime_put(hba->dev);
+		msleep(500);
+		if (!ufshcd_is_shutdown_ongoing(hba))
+			queue_work(hba->recovery_wq, &hba->rls_work);
+		return;
+	}
+	ret = 0;
 	ufshcd_scsi_block_requests(hba);
 	if (ufshcd_is_shutdown_ongoing(hba))
 		goto out;
