@@ -53,6 +53,7 @@ static unsigned int num_devices = 1;
 static size_t huge_class_size;
 
 static const struct block_device_operations zram_devops;
+#define ZRAM_BACKING_MODE (FMODE_READ | FMODE_WRITE | FMODE_EXCL)
 
 static void zram_free_page(struct zram *zram, size_t index);
 static int zram_read_from_zspool(struct zram *zram, struct page *page,
@@ -573,7 +574,7 @@ static void reset_bdev(struct zram *zram)
 		return;
 
 	bdev = zram->bdev;
-	blkdev_put(bdev, zram);
+	blkdev_put(bdev, ZRAM_BACKING_MODE);
 	/* hope filp_close flush all of IO */
 	filp_close(zram->backing_dev, NULL);
 	zram->backing_dev = NULL;
@@ -660,8 +661,7 @@ static ssize_t backing_dev_store(struct device *dev,
 		goto out;
 	}
 
-	bdev = blkdev_get_by_dev(inode->i_rdev, BLK_OPEN_READ | BLK_OPEN_WRITE,
-				 zram, NULL);
+	bdev = blkdev_get_by_dev(inode->i_rdev, ZRAM_BACKING_MODE, zram);
 	if (IS_ERR(bdev)) {
 		err = PTR_ERR(bdev);
 		bdev = NULL;
@@ -698,7 +698,7 @@ out:
 	kvfree(bitmap);
 
 	if (bdev)
-		blkdev_put(bdev, zram);
+		blkdev_put(bdev, ZRAM_BACKING_MODE);
 
 	if (backing_dev)
 		filp_close(backing_dev, NULL);
@@ -740,7 +740,9 @@ static void read_from_bdev_async(struct zram *zram, struct page *page,
 {
 	struct bio *bio;
 
-	bio = bio_alloc(zram->bdev, 1, parent->bi_opf, GFP_NOIO);
+	bio = bio_alloc(GFP_NOIO, 1);
+	bio_set_dev(bio, zram->bdev);
+	bio->bi_opf = parent->bi_opf;
 	bio->bi_iter.bi_sector = entry * (PAGE_SIZE >> 9);
 	__bio_add_page(bio, page, PAGE_SIZE, 0);
 	bio_chain(bio, parent);
@@ -794,7 +796,7 @@ static ssize_t writeback_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t len)
 {
 	struct zram *zram = dev_to_zram(dev);
-	unsigned long nr_pages = zram->disksize >> PAGE_SHIFT;
+	unsigned long nr_pages;
 	struct zram_pp_ctl *ctl = NULL;
 	struct zram_pp_slot *pps;
 	unsigned long index = 0;
@@ -817,18 +819,25 @@ static ssize_t writeback_store(struct device *dev,
 		if (strncmp(buf, PAGE_WB_SIG, sizeof(PAGE_WB_SIG) - 1))
 			return -EINVAL;
 
-		if (kstrtol(buf + sizeof(PAGE_WB_SIG) - 1, 10, &index) ||
-				index >= nr_pages)
+		if (kstrtoul(buf + sizeof(PAGE_WB_SIG) - 1, 10, &index))
 			return -EINVAL;
 
-		nr_pages = 1;
 		mode = PAGE_WRITEBACK;
 	}
 
 	down_read(&zram->init_lock);
 	if (!init_done(zram)) {
-		ret = -EINVAL;
-		goto release_init_lock;
+		up_read(&zram->init_lock);
+		return -EINVAL;
+	}
+
+	nr_pages = zram->disksize >> PAGE_SHIFT;
+	if (mode == PAGE_WRITEBACK) {
+		if (index >= nr_pages) {
+			up_read(&zram->init_lock);
+			return -EINVAL;
+		}
+		nr_pages = 1;
 	}
 
 	/* Do not permit concurrent post-processing actions. */
@@ -887,8 +896,9 @@ static ssize_t writeback_store(struct device *dev,
 			goto next;
 		zram_slot_unlock(zram, index);
 
-		bio_init(&bio, zram->bdev, &bio_vec, 1,
-			 REQ_OP_WRITE | REQ_SYNC);
+		bio_init(&bio, &bio_vec, 1);
+		bio_set_dev(&bio, zram->bdev);
+		bio_set_op_attrs(&bio, REQ_OP_WRITE, REQ_SYNC);
 		bio.bi_iter.bi_sector = blk_idx * (PAGE_SIZE >> 9);
 		__bio_add_page(&bio, page, PAGE_SIZE, 0);
 
@@ -967,7 +977,9 @@ static void zram_sync_read(struct work_struct *work)
 	struct bio_vec bv;
 	struct bio bio;
 
-	bio_init(&bio, zw->zram->bdev, &bv, 1, REQ_OP_READ);
+	bio_init(&bio, &bv, 1);
+	bio_set_dev(&bio, zw->zram->bdev);
+	bio_set_op_attrs(&bio, REQ_OP_READ, 0);
 	bio.bi_iter.bi_sector = zw->entry * (PAGE_SIZE >> 9);
 	__bio_add_page(&bio, zw->page, PAGE_SIZE, 0);
 	zw->error = submit_bio_wait(&bio);
