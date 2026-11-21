@@ -622,7 +622,7 @@ static ssize_t backing_dev_store(struct device *dev,
 	struct file *backing_dev = NULL;
 	struct inode *inode;
 	struct address_space *mapping;
-	unsigned int bitmap_sz;
+	size_t bitmap_sz;
 	unsigned long nr_pages, *bitmap = NULL;
 	struct block_device *bdev = NULL;
 	int err;
@@ -633,13 +633,16 @@ static ssize_t backing_dev_store(struct device *dev,
 		return -ENOMEM;
 
 	down_write(&zram->init_lock);
-	if (init_done(zram)) {
-		pr_info("Can't setup backing device for initialized device\n");
+	if (init_done(zram) && zram->backing_dev) {
+		pr_info("Reset zram before replacing its backing device\n");
 		err = -EBUSY;
 		goto out;
 	}
 
-	strscpy(file_name, buf, PATH_MAX);
+	if (strscpy(file_name, buf, PATH_MAX) < 0) {
+		err = -ENAMETOOLONG;
+		goto out;
+	}
 	/* ignore trailing newline */
 	sz = strlen(file_name);
 	if (sz > 0 && file_name[sz - 1] == '\n')
@@ -658,6 +661,11 @@ static ssize_t backing_dev_store(struct device *dev,
 	/* Support only block device in this moment */
 	if (!S_ISBLK(inode->i_mode)) {
 		err = -ENOTBLK;
+		goto out;
+	}
+
+	if (MAJOR(inode->i_rdev) == zram_major) {
+		err = -EINVAL;
 		goto out;
 	}
 
