@@ -8,6 +8,16 @@ menuconfig POWER_SUPPLY
 
 if POWER_SUPPLY
 
+config OPLUS_R8Q_CHARGE_COMPAT
+	tristate "OxygenOS battery telemetry for Samsung r8q"
+	depends on SEC_R8Q_PROJECT && BATTERY_SAMSUNG_V2
+	help
+	  Expose selected read-only OxygenOS battery attributes using the
+	  existing Samsung battery driver. The attributes report battery
+	  voltage in millivolts and full charge capacity in milliamp-hours
+	  under /sys/class/oplus_chg/battery.
+	  Enable this for OxygenOS integration on Samsung r8q.
+
 config POWER_SUPPLY_DEBUG
 	bool "Power supply debug"
 	help
