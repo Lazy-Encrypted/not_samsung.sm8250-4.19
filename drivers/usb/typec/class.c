@@ -1196,7 +1196,12 @@ static ssize_t power_operation_mode_show(struct device *dev,
 {
 	struct typec_port *port = to_typec_port(dev);
 
-	return sprintf(buf, "%s\n", typec_pwr_opmodes[port->pwr_opmode]);
+	enum typec_pwr_opmode opmode = READ_ONCE(port->pwr_opmode);
+
+	if ((unsigned int)opmode >= ARRAY_SIZE(typec_pwr_opmodes))
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", typec_pwr_opmodes[opmode]);
 }
 static DEVICE_ATTR_RO(power_operation_mode);
 
@@ -1338,7 +1343,6 @@ const struct device_type typec_port_dev_type = {
  */
 void typec_set_data_role(struct typec_port *port, enum typec_data_role role)
 {
-	pr_info("%s data_role=%d role=%d\n", __func__, port->data_role, role);
 	if (port->data_role == role)
 		return;
 
@@ -1357,7 +1361,6 @@ EXPORT_SYMBOL_GPL(typec_set_data_role);
  */
 void typec_set_pwr_role(struct typec_port *port, enum typec_role role)
 {
-	pr_info("%s pwr_role=%d role=%d\n", __func__, port->pwr_role, role);
 	if (port->pwr_role == role)
 		return;
 
@@ -1377,7 +1380,6 @@ EXPORT_SYMBOL_GPL(typec_set_pwr_role);
  */
 void typec_set_vconn_role(struct typec_port *port, enum typec_role role)
 {
-	pr_info("%s vconn_role=%d role=%d\n", __func__, port->vconn_role, role);
 	if (port->vconn_role == role)
 		return;
 
@@ -1407,7 +1409,6 @@ void typec_set_pwr_opmode(struct typec_port *port,
 {
 	struct device *partner_dev;
 
-	pr_info("%s pwr_opmode=%d opmode=%d\n", __func__, port->pwr_opmode, opmode);
 	if ((port->pwr_opmode == opmode) || (opmode < TYPEC_PWR_MODE_USB) ||
 						(opmode > TYPEC_PWR_MODE_MAX))
 		return;
