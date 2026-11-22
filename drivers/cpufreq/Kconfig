@@ -224,6 +224,13 @@ config CPU_FREQ_GOV_SCHEDUTIL
 
 	  If in doubt, say N.
 
+config CPU_FREQ_SCHEDUTIL_BOUNCING
+	bool "Moderate sustained peak schedutil requests"
+	depends on CPU_FREQ_GOV_SCHEDUTIL
+	help
+	  Keep short bursts at full speed and cap sustained peak requests at
+	  the highest frequency table entry within 90 percent of policy max.
+
 config CPU_EVENT_BOOST
 	bool "CPU Input Boost"
 	default y

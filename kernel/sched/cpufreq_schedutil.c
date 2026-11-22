@@ -36,6 +36,10 @@ struct sugov_policy {
 	unsigned int		freq_response_time_ms;
 	unsigned int		next_freq;
 	unsigned int		cached_raw_freq;
+#ifdef CONFIG_CPU_FREQ_SCHEDUTIL_BOUNCING
+	u64			peak_since;
+	u64			peak_last;
+#endif
 
 	/* The next fields are only needed if fast switch cannot be used: */
 	struct			irq_work irq_work;
@@ -232,6 +236,39 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 		return true;
 
 	return !sugov_should_rate_limit(sg_policy, time);
+}
+
+static unsigned int sugov_limit_sustained_peak(struct sugov_policy *sg_policy,
+					       u64 time, unsigned int freq)
+{
+#ifdef CONFIG_CPU_FREQ_SCHEDUTIL_BOUNCING
+	struct cpufreq_policy *policy = sg_policy->policy;
+	unsigned int cap = policy->max - policy->max / 10;
+	int index;
+
+	/* Preserve policy floors and release the cap as soon as demand falls. */
+	if (!policy->freq_table || policy->min >= cap || freq < policy->max) {
+		sg_policy->peak_since = 0;
+		return freq;
+	}
+
+	if (!sg_policy->peak_since ||
+	    time - sg_policy->peak_last > 50 * NSEC_PER_MSEC)
+		sg_policy->peak_since = time;
+	sg_policy->peak_last = time;
+
+	if (time - sg_policy->peak_since < 150 * NSEC_PER_MSEC)
+		return freq;
+
+	index = cpufreq_frequency_table_target(policy, cap, policy->min,
+					      policy->max, CPUFREQ_RELATION_H);
+	if (index >= 0) {
+		/* next_freq caches the capped target, not the raw demand. */
+		sg_policy->cached_raw_freq = CPUFREQ_ENTRY_INVALID;
+		return min(freq, policy->freq_table[index].frequency);
+	}
+#endif
+	return freq;
 }
 
 static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
@@ -675,6 +712,7 @@ static void sugov_update_single_freq(struct update_util_data *hook, u64 time,
 		sg_policy->cached_raw_freq = cached_freq;
 	}
 
+	next_f = sugov_limit_sustained_peak(sg_policy, time, next_f);
 	if (!sugov_update_next_freq(sg_policy, time, next_f))
 		return;
 
@@ -763,6 +801,7 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 
 	if (sugov_should_update_freq(sg_policy, time)) {
 		next_f = sugov_next_freq_shared(sg_cpu, time);
+		next_f = sugov_limit_sustained_peak(sg_policy, time, next_f);
 
 		if (!sugov_update_next_freq(sg_policy, time, next_f))
 			goto unlock;
@@ -1121,6 +1160,10 @@ static int sugov_start(struct cpufreq_policy *policy)
 
 	sugov_update_rate_limit_us(sg_policy);
 	sg_policy->last_freq_update_time	= 0;
+#ifdef CONFIG_CPU_FREQ_SCHEDUTIL_BOUNCING
+	sg_policy->peak_since = 0;
+	sg_policy->peak_last = 0;
+#endif
 	sg_policy->next_freq			= 0;
 	sg_policy->work_in_progress		= false;
 	sg_policy->limits_changed		= false;
