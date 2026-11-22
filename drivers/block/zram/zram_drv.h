@@ -159,4 +159,8 @@ struct zram {
 #endif
 	atomic_t pp_in_progress;
 };
+
+/* HybridSwap must use the same sleepable slot lock as zram I/O. */
+void zram_slot_lock(struct zram *zram, u32 index);
+void zram_slot_unlock(struct zram *zram, u32 index);
 #endif

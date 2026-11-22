@@ -6,10 +6,6 @@
 
 #define dev_to_zram(dev) ((struct zram *)dev_to_disk(dev)->private_data)
 #define init_done(zram) ((zram)->disksize)
-#define zram_slot_lock(zram, index) \
-	bit_spin_lock(ZRAM_ENTRY_LOCK, &(zram)->table[index].flags)
-#define zram_slot_unlock(zram, index) \
-	bit_spin_unlock(ZRAM_ENTRY_LOCK, &(zram)->table[index].flags)
 #define zram_test_flag(zram, index, flag) \
 	((zram)->table[index].flags & BIT(flag))
 #define zram_set_flag(zram, index, flag) \
