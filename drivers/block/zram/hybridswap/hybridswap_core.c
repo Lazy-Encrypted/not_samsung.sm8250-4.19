@@ -5,6 +5,7 @@
 
 #define pr_fmt(fmt) "[HYBRIDSWAP]" fmt
 
+#include <linux/hybridswap_hooks.h>
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/sched/task.h>
@@ -998,7 +999,7 @@ void hybridswap_force_reclaim(struct mem_cgroup *mcg)
 	mutex_unlock(&hybs->swap_lock);
 }
 
-void mem_cgroup_id_remove_hook(void *data, struct mem_cgroup *memcg)
+void hybridswap_memcg_id_remove(struct mem_cgroup *memcg)
 {
 	if (!memcg->android_oem_data1)
 		return;

@@ -486,7 +486,6 @@ extern unsigned long long hybridswap_get_zram_pagefault(void);
 extern bool hybridswap_reclaim_work_running(void);
 extern void hybridswap_force_reclaim(struct mem_cgroup *mcg);
 extern bool hybridswap_stored_wm_ok(void);
-extern void mem_cgroup_id_remove_hook(void *data, struct mem_cgroup *memcg);
 extern int mem_cgroup_stored_wm_ratio_write(
 	struct cgroup_subsys_state *css, struct cftype *cft, s64 val);
 extern s64 mem_cgroup_stored_wm_ratio_read(
@@ -533,9 +532,6 @@ extern bool zram_watermark_ok(void);
 extern void wake_all_swapd(void);
 extern void alloc_pages_slowpath_hook(void *data, gfp_t gfp_mask,
         unsigned int order, unsigned long delta);
-extern void rmqueue_hook(void *data, struct zone *preferred_zone,
-	struct zone *zone, unsigned int order, gfp_t gfp_flags,
-	unsigned int alloc_flags, int migratetype);
 extern void __init swapd_pre_init(void);
 extern void swapd_pre_deinit(void);
 extern void update_swapd_memcg_param(struct mem_cgroup *memcg);

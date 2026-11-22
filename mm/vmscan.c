@@ -69,7 +69,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
-#include <trace/hooks/vh_vmscan.h>
+#include <linux/hybridswap_hooks.h>
 
 struct scan_control {
 	/* How many pages shrink_list() should reclaim */
@@ -2659,7 +2659,7 @@ out:
 		if (!scan && !mem_cgroup_online(memcg))
 			scan = min(size, SWAP_CLUSTER_MAX);
 		#ifdef CONFIG_HYBRIDSWAP_SWAPD
-		trace_android_vh_tune_scan_type((char *)&scan_balance);
+		hybridswap_tune_scan_type((char *)&scan_balance);
 		#endif
 
 		switch (scan_balance) {

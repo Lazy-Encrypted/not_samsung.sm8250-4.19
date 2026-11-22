@@ -5,9 +5,9 @@
 
 #define pr_fmt(fmt) "[HYBRIDSWAP]" fmt
 
+#include <linux/hybridswap_hooks.h>
 #include <linux/slab.h>
 #include <linux/cpu.h>
-#include <trace/hooks/vh_vmscan.h>
 #include <linux/genhd.h>
 #include <linux/proc_fs.h>
 #include <linux/version.h>
@@ -54,6 +54,7 @@ enum scan_balance {
 static int log_level = HYB_MAX;
 static struct kmem_cache *hybridswap_cache;
 static struct list_head score_head;
+static bool hybridswap_ready;
 static DEFINE_SPINLOCK(score_list_lock);
 static DEFINE_MUTEX(hybridswap_enable_lock);
 static bool hybridswap_enabled = false;
@@ -239,7 +240,7 @@ memcg_hybs_t *hybridswap_cache_alloc(struct mem_cgroup *memcg, bool atomic)
 }
 
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
-static void tune_scan_type_hook(void *data, char *scan_balance)
+void hybridswap_tune_scan_type(char *scan_balance)
 {
 	/*hybrid swapd,scan anon only*/
 	if (current_is_swapd()) {
@@ -260,15 +261,18 @@ static void tune_scan_type_hook(void *data, char *scan_balance)
 }
 #endif
 
-static void mem_cgroup_alloc_hook(void *data, struct mem_cgroup *memcg)
+void hybridswap_memcg_alloc(struct mem_cgroup *memcg)
 {
+	if (!smp_load_acquire(&hybridswap_ready))
+		return;
+
 	if (memcg->android_oem_data1)
 		BUG();
 
 	hybridswap_cache_alloc(memcg, true);
 }
 
-static void mem_cgroup_free_hook(void *data, struct mem_cgroup *memcg)
+void hybridswap_memcg_free(struct mem_cgroup *memcg)
 {
 	memcg_hybs_t *hybs;
 
@@ -302,17 +306,14 @@ void memcg_app_score_update(struct mem_cgroup *target)
 	spin_unlock_irqrestore(&score_list_lock, flags);
 }
 
-static void mem_cgroup_css_online_hook(void *data,
-		struct cgroup_subsys_state *css, struct mem_cgroup *memcg)
+void hybridswap_memcg_online(struct mem_cgroup *memcg)
 {
+	/* The cgroup core keeps the CSS alive through the offline callback. */
 	if (memcg->android_oem_data1)
 		memcg_app_score_update(memcg);
-
-	css_get(css);
 }
 
-static void mem_cgroup_css_offline_hook(void *data,
-		struct cgroup_subsys_state *css, struct mem_cgroup *memcg)
+void hybridswap_memcg_offline(struct mem_cgroup *memcg)
 {
 	unsigned long flags;
 
@@ -321,82 +322,6 @@ static void mem_cgroup_css_offline_hook(void *data,
 		list_del_init(&MEMCGRP_ITEM(memcg, score_node));
 		spin_unlock_irqrestore(&score_list_lock, flags);
 	}
-
-	css_put(css);
-}
-
-#define REGISTER_HOOK(name) do {\
-	rc = register_trace_android_vh_##name(name##_hook, NULL);\
-	if (rc) {\
-		hybp(HYB_ERR, "register hook %s failed: %d", #name, rc);\
-		goto err_out_##name;\
-	}\
-} while (0)
-
-#define UNREGISTER_HOOK(name) do {\
-	unregister_trace_android_vh_##name(name##_hook, NULL);\
-} while (0)
-
-#define ERROR_OUT(name) err_out_##name
-
-static int register_all_hooks(void)
-{
-	int rc;
-
-	/* mem_cgroup_alloc_hook */
-	REGISTER_HOOK(mem_cgroup_alloc);
-	/* mem_cgroup_free_hook */
-	REGISTER_HOOK(mem_cgroup_free);
-	/* mem_cgroup_css_online_hook */
-	REGISTER_HOOK(mem_cgroup_css_online);
-	/* mem_cgroup_css_offline_hook */
-	REGISTER_HOOK(mem_cgroup_css_offline);
-#ifdef CONFIG_HYBRIDSWAP_SWAPD
-	/* rmqueue_hook */
-	REGISTER_HOOK(rmqueue);
-	/* tune_scan_type_hook */
-	REGISTER_HOOK(tune_scan_type);
-#endif
-#ifdef CONFIG_HYBRIDSWAP_CORE
-	/* mem_cgroup_id_remove_hook */
-	REGISTER_HOOK(mem_cgroup_id_remove);
-#endif
-	return 0;
-
-#ifdef CONFIG_HYBRIDSWAP_CORE
-	UNREGISTER_HOOK(mem_cgroup_id_remove);
-ERROR_OUT(mem_cgroup_id_remove):
-#endif
-#ifdef CONFIG_HYBRIDSWAP_SWAPD
-	UNREGISTER_HOOK(tune_scan_type);
-ERROR_OUT(tune_scan_type):
-	UNREGISTER_HOOK(rmqueue);
-ERROR_OUT(rmqueue):
-#endif
-	UNREGISTER_HOOK(mem_cgroup_css_offline);
-ERROR_OUT(mem_cgroup_css_offline):
-	UNREGISTER_HOOK(mem_cgroup_css_online);
-ERROR_OUT(mem_cgroup_css_online):
-	UNREGISTER_HOOK(mem_cgroup_free);
-ERROR_OUT(mem_cgroup_free):
-	UNREGISTER_HOOK(mem_cgroup_alloc);
-ERROR_OUT(mem_cgroup_alloc):
-	return rc;
-}
-
-static void unregister_all_hook(void)
-{
-	UNREGISTER_HOOK(mem_cgroup_alloc);
-	UNREGISTER_HOOK(mem_cgroup_free);
-	UNREGISTER_HOOK(mem_cgroup_css_offline);
-	UNREGISTER_HOOK(mem_cgroup_css_online);
-#ifdef CONFIG_HYBRIDSWAP_CORE
-	UNREGISTER_HOOK(mem_cgroup_id_remove);
-#endif
-#ifdef CONFIG_HYBRIDSWAP_SWAPD
-	UNREGISTER_HOOK(rmqueue);
-	UNREGISTER_HOOK(tune_scan_type);
-#endif
 }
 
 unsigned long memcg_anon_pages(struct mem_cgroup *memcg)
@@ -995,22 +920,12 @@ int __init hybridswap_pre_init(void)
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
 	swapd_pre_init();
 #endif
-	ret = register_all_hooks();
-	if (ret)
-		goto fail_out;
+	smp_store_release(&hybridswap_ready, true);
 
 	hybp(HYB_INFO, "hybridswap inited success!\n");
 	return 0;
 
-fail_out:
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
-	swapd_pre_deinit();
-#endif
-#ifdef CONFIG_HYBRIDSWAP_ASYNC_COMPRESS
-	akcompressd_pre_deinit();
-#endif
-#ifdef CONFIG_HYBRIDSWAP_SWAPD
-	cgroup_rm_cftypes(mem_cgroup_swapd_legacy_files);
 remove_hybridswap_files:
 #endif
 	cgroup_rm_cftypes(mem_cgroup_hybridswap_legacy_files);
@@ -1024,7 +939,7 @@ error_out:
 
 void __exit hybridswap_exit(void)
 {
-	unregister_all_hook();
+	WRITE_ONCE(hybridswap_ready, false);
 
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
 	swapd_pre_deinit();

@@ -5,6 +5,7 @@
 
 #define pr_fmt(fmt) "[HYBRIDSWAP]" fmt
 
+#include <linux/hybridswap_hooks.h>
 #include <uapi/linux/sched/types.h>
 #include <linux/sched.h>
 #include <linux/memory.h>
@@ -1790,9 +1791,7 @@ void alloc_pages_slowpath_hook(void *data, gfp_t gfp_flags,
 		wake_all_swapd();
 }
 
-void rmqueue_hook(void *data, struct zone *preferred_zone,
-		struct zone *zone, unsigned int order, gfp_t gfp_flags,
-		unsigned int alloc_flags, int migratetype)
+void hybridswap_rmqueue(gfp_t gfp_flags)
 {
 	if (gfp_flags & __GFP_KSWAPD_RECLAIM)
 		wake_all_swapd();
