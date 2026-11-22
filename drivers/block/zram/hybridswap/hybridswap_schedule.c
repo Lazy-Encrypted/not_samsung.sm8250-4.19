@@ -8,6 +8,7 @@
 #include <linux/kernel.h>
 #include <linux/kref.h>
 #include <linux/bio.h>
+#include <linux/ioprio.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/sched/task.h>
@@ -403,6 +404,7 @@ static void hybridswap_set_bio_opf(struct bio *bio,
 {
 	if (segment->req->io_para.scenario == HYBRIDSWAP_RECLAIM_IN) {
 		bio->bi_opf |= REQ_BACKGROUND;
+		bio_set_prio(bio, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, IOPRIO_BE_NR - 1));
 		return;
 	}
 
