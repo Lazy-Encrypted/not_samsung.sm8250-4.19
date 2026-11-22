@@ -137,7 +137,7 @@ config ZRAM_MEMORY_TRACKING
 config HYBRIDSWAP
 	bool "Oplus HybridSwap"
 	depends on MEMCG && ZRAM && !ZRAM_MULTI_COMP && !ZRAM_WRITEBACK
-	select TRACEPOINTS
+	depends on TRACEPOINTS
 	default n
 	help
 	  Enable the Oplus compressed-RAM plus block-device swap backend.
