@@ -2977,7 +2977,7 @@ static int __init zram_init(void)
 #ifdef CONFIG_HYBRIDSWAP
 	ret = hybridswap_pre_init();
 	if (ret)
-		goto out_error;
+		pr_warn("OXYGENOS16_R8Q_ZRAM_FALLBACK_V1: HybridSwap init failed (%d); continuing with standard zram\n", ret);
 #endif
 
 	return 0;
