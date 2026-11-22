@@ -328,7 +328,7 @@ static void mem_cgroup_css_offline_hook(void *data,
 #define REGISTER_HOOK(name) do {\
 	rc = register_trace_android_vh_##name(name##_hook, NULL);\
 	if (rc) {\
-		hybp(HYB_ERR, "%s:%d register hook %s failed", __FILE__, __LINE__, #name);\
+		hybp(HYB_ERR, "register hook %s failed: %d", #name, rc);\
 		goto err_out_##name;\
 	}\
 } while (0)
@@ -984,7 +984,7 @@ int __init hybridswap_pre_init(void)
 			mem_cgroup_swapd_legacy_files);
 	if (ret) {
 		hybp(HYB_INFO, "add mem_cgroup_swapd_legacy_files failed!\n");
-		goto error_out;
+		goto remove_hybridswap_files;
 	}
 #endif
 
@@ -1009,6 +1009,11 @@ fail_out:
 #ifdef CONFIG_HYBRIDSWAP_ASYNC_COMPRESS
 	akcompressd_pre_deinit();
 #endif
+#ifdef CONFIG_HYBRIDSWAP_SWAPD
+	cgroup_rm_cftypes(mem_cgroup_swapd_legacy_files);
+remove_hybridswap_files:
+#endif
+	cgroup_rm_cftypes(mem_cgroup_hybridswap_legacy_files);
 error_out:
 	if (hybridswap_cache) {
 		kmem_cache_destroy(hybridswap_cache);
