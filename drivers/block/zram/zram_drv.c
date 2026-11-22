@@ -1687,21 +1687,79 @@ static int zram_read_from_zspool(struct zram *zram, struct page *page,
 		return read_incompressible_page(zram, page, index);
 }
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+static struct workqueue_struct *zram_fault_wq;
+
+struct zram_fault_work {
+	struct work_struct work;
+	struct zram *zram;
+	struct page *page;
+	struct bio *parent;
+	u32 index;
+};
+
+static int zram_read_page(struct zram *zram, struct page *page, u32 index,
+			  struct bio *parent);
+
+static void zram_fault_workfn(struct work_struct *work)
+{
+	struct zram_fault_work *fault =
+		container_of(work, struct zram_fault_work, work);
+	unsigned int noio_flags = memalloc_noio_save();
+	int ret;
+
+	ret = zram_read_page(fault->zram, fault->page, fault->index, NULL);
+	memalloc_noio_restore(noio_flags);
+	if (ret) {
+		atomic64_inc(&fault->zram->stats.failed_reads);
+		bio_io_error(fault->parent);
+	} else {
+		flush_dcache_page(fault->page);
+		bio_endio(fault->parent);
+	}
+	kfree(fault);
+}
+
+static int zram_queue_fault(struct zram *zram, struct page *page, u32 index,
+			    struct bio *parent)
+{
+	struct zram_fault_work *fault;
+
+	fault = kmalloc(sizeof(*fault), GFP_ATOMIC);
+	if (!fault)
+		return -ENOMEM;
+
+	INIT_WORK(&fault->work, zram_fault_workfn);
+	fault->zram = zram;
+	fault->page = page;
+	fault->parent = parent;
+	fault->index = index;
+	bio_inc_remaining(parent);
+	queue_work(zram_fault_wq, &fault->work);
+	return 1;
+}
+#endif
+
 static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 			  struct bio *parent)
 {
 	int ret;
 
 	zram_slot_lock(zram, index);
-	#ifdef CONFIG_HYBRIDSWAP_CORE
-	if (likely(!parent)) {
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	/* Fault-in waits on a nested BIO. Run it outside make_request. */
+	if (parent && zram_test_flag(zram, index, ZRAM_WB)) {
+		zram_slot_unlock(zram, index);
+		return zram_queue_fault(zram, page, index, parent);
+	}
+	if (!parent) {
 		ret = hybridswap_fault_out(zram, index);
 		if (ret) {
 			zram_slot_unlock(zram, index);
 			return ret;
 		}
 	}
-	#endif
+#endif
 	if (!zram_test_flag(zram, index, ZRAM_WB)) {
 		/* Slot should be locked through out the function call */
 		ret = zram_read_from_zspool(zram, page, index);
@@ -2326,7 +2384,8 @@ static int zram_bvec_rw(struct zram *zram, struct bio_vec *bvec, u32 index,
 			atomic64_inc(&zram->stats.failed_reads);
 			return ret;
 		}
-		flush_dcache_page(bvec->bv_page);
+		if (!ret)
+			flush_dcache_page(bvec->bv_page);
 	} else {
 		ret = zram_bvec_write(zram, bvec, index, offset, bio);
 		if (unlikely(ret < 0)) {
@@ -2920,6 +2979,10 @@ static int zram_remove_cb(int id, void *ptr, void *data)
 static void destroy_devices(void)
 {
 	class_unregister(&zram_control_class);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (zram_fault_wq)
+		destroy_workqueue(zram_fault_wq);
+#endif
 	idr_for_each(&zram_index_idr, &zram_remove_cb, NULL);
 	zram_debugfs_destroy();
 	idr_destroy(&zram_index_idr);
@@ -2964,6 +3027,15 @@ static int __init zram_init(void)
 		ret = -EBUSY;
 		goto out_lz4p;
 	}
+
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	zram_fault_wq = alloc_workqueue("zram_fault",
+				       WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
+	if (!zram_fault_wq) {
+		ret = -ENOMEM;
+		goto out_error;
+	}
+#endif
 
 	while (num_devices != 0) {
 		mutex_lock(&zram_index_mutex);
