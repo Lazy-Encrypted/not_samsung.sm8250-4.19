@@ -54,6 +54,7 @@
 #include <linux/compaction.h>
 #include <trace/events/kmem.h>
 #include <trace/events/oom.h>
+#include <trace/hooks/vh_vmscan.h>
 #include <linux/prefetch.h>
 #include <linux/mm_inline.h>
 #include <linux/migrate.h>
@@ -3429,6 +3430,10 @@ struct page *rmqueue(struct zone *preferred_zone,
 {
 	unsigned long flags;
 	struct page *page;
+	#ifdef CONFIG_HYBRIDSWAP_SWAPD
+	trace_android_vh_rmqueue(preferred_zone, zone, order, gfp_flags,
+			alloc_flags, migratetype);
+	#endif
 
 	if (likely(order == 0)) {
 		page = rmqueue_pcplist(preferred_zone, zone, order,

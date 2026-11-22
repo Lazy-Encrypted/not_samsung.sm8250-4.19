@@ -5,7 +5,9 @@
 
 #ifndef HYBRIDSWAP_H
 #define HYBRIDSWAP_H
+struct zram;
 extern int __init hybridswap_pre_init(void);
+extern void __exit hybridswap_exit(void);
 extern ssize_t hybridswap_vmstat_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
 extern ssize_t hybridswap_loglevel_store(struct device *dev,

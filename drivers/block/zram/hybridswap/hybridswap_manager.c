@@ -361,9 +361,14 @@ static int move_to_zram(struct zram *zram, u32 index, struct io_extent *io_ext)
 		hybp(HYB_ERR, "alloc handle failed, size = %d\n", size);
 		return -ENOMEM;
 	}
-	dst = zs_map_object(zram->mem_pool, handle, ZS_MM_WO);
+	dst = kmalloc(size, GFP_NOIO);
+	if (!dst) {
+		zs_free(zram->mem_pool, handle);
+		return -ENOMEM;
+	}
 	copy_from_pages(dst, io_ext->pages, eswpentry, size);
-	zs_unmap_object(zram->mem_pool, handle);
+	zs_obj_write(zram->mem_pool, handle, dst, size);
+	kfree(dst);
 	__move_to_zram(zram, index, handle, io_ext);
 
 	return 0;
@@ -514,6 +519,7 @@ static int shrink_entry(struct zram *zram, u32 index, struct io_extent *io_ext,
 	unsigned long handle;
 	int size;
 	u8 *src = NULL;
+	u8 *tmp;
 	struct hybridswap_stat *stat = hybridswap_get_stat_obj();
 
 	if (!stat) {
@@ -541,9 +547,15 @@ static int shrink_entry(struct zram *zram, u32 index, struct io_extent *io_ext,
 		return -ENOSPC;
 	}
 
-	src = zs_map_object(zram->mem_pool, handle, ZS_MM_RO);
+	tmp = kmalloc(size, GFP_NOIO);
+	if (!tmp) {
+		zram_slot_unlock(zram, index);
+		return -ENOMEM;
+	}
+	src = zs_obj_read_begin(zram->mem_pool, handle, size, tmp);
 	copy_to_pages(src, io_ext->pages, ext_off, size);
-	zs_unmap_object(zram->mem_pool, handle);
+	zs_obj_read_end(zram->mem_pool, handle, size, src);
+	kfree(tmp);
 	io_ext->index[io_ext->cnt++] = index;
 
 	zram_lru_del(zram, index);

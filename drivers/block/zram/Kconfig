@@ -134,6 +134,35 @@ config ZRAM_MEMORY_TRACKING
 
 	  See Documentation/admin-guide/blockdev/zram.rst for more information.
 
+config HYBRIDSWAP
+	bool "Oplus HybridSwap"
+	depends on MEMCG && ZRAM && !ZRAM_MULTI_COMP && !ZRAM_WRITEBACK
+	default n
+	help
+	  Enable the Oplus compressed-RAM plus block-device swap backend.
+
+config HYBRIDSWAP_SWAPD
+	bool "HybridSwap background reclaim thread"
+	depends on HYBRIDSWAP
+	default n
+	help
+	  Enable the HybridSwap daemon that reclaims anonymous pages to its
+	  configured block-device backend under memory pressure.
+
+config HYBRIDSWAP_CORE
+	bool "HybridSwap block-device backend"
+	depends on HYBRIDSWAP
+	default n
+	help
+	  Enable HybridSwap storage, reclaim and fault-in paths.
+
+config HYBRIDSWAP_ASYNC_COMPRESS
+	bool "HybridSwap asynchronous compression cache"
+	depends on HYBRIDSWAP
+	default n
+	help
+	  Keep disabled unless the asynchronous cache integration is enabled.
+
 config ZRAM_MULTI_COMP
 	bool "Enable multiple compression streams"
 	depends on ZRAM

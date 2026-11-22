@@ -32,6 +32,10 @@
 #include <linux/sysfs.h>
 #include <linux/debugfs.h>
 #include <linux/cpuhotplug.h>
+#ifdef CONFIG_HYBRIDSWAP
+#include <linux/memcontrol.h>
+#include "hybridswap/hybridswap.h"
+#endif
 
 #include "zram_drv.h"
 
@@ -1567,6 +1571,9 @@ static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 static void zram_free_page(struct zram *zram, size_t index)
 {
 	unsigned long handle;
+	#ifdef CONFIG_HYBRIDSWAP_CORE
+	hybridswap_untrack(zram, index);
+	#endif
 
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	zram->table[index].ac_time = 0;
@@ -1686,6 +1693,15 @@ static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 	int ret;
 
 	zram_slot_lock(zram, index);
+	#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (likely(!parent)) {
+		ret = hybridswap_fault_out(zram, index);
+		if (ret) {
+			zram_slot_unlock(zram, index);
+			return ret;
+		}
+	}
+	#endif
 	if (!zram_test_flag(zram, index, ZRAM_WB)) {
 		/* Slot should be locked through out the function call */
 		ret = zram_read_from_zspool(zram, page, index);
@@ -1880,9 +1896,21 @@ static int zram_bvec_write_partial(struct zram *zram, struct bio_vec *bvec,
 static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec,
 			   u32 index, int offset, struct bio *bio)
 {
+	int ret;
+
 	if (is_partial_io(bvec))
-		return zram_bvec_write_partial(zram, bvec, index, offset, bio);
-	return zram_write_page(zram, bvec->bv_page, index);
+		ret = zram_bvec_write_partial(zram, bvec, index, offset, bio);
+	else
+		ret = zram_write_page(zram, bvec->bv_page, index);
+
+	#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (!ret) {
+		zram_slot_lock(zram, index);
+		hybridswap_track(zram, index, page_memcg(bvec->bv_page));
+		zram_slot_unlock(zram, index);
+	}
+	#endif
+	return ret;
 }
 
 #ifdef CONFIG_ZRAM_MULTI_COMP
@@ -2386,6 +2414,13 @@ static void zram_slot_free_notify(struct block_device *bdev,
 		atomic64_inc(&zram->stats.miss_free);
 		return;
 	}
+	#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (!hybridswap_delete(zram, index)) {
+		zram_slot_unlock(zram, index);
+		atomic64_inc(&zram->stats.miss_free);
+		return;
+	}
+	#endif
 
 	zram_free_page(zram, index);
 	zram_slot_unlock(zram, index);
@@ -2585,6 +2620,24 @@ static DEVICE_ATTR_RW(recomp_algorithm);
 static DEVICE_ATTR_WO(recompress);
 #endif
 static DEVICE_ATTR_WO(algorithm_params);
+#ifdef CONFIG_HYBRIDSWAP
+static DEVICE_ATTR_RO(hybridswap_vmstat);
+static DEVICE_ATTR_RW(hybridswap_loglevel);
+static DEVICE_ATTR_RW(hybridswap_enable);
+#ifdef CONFIG_HYBRIDSWAP_SWAPD
+static DEVICE_ATTR_RW(hybridswap_swapd_pause);
+#endif
+#ifdef CONFIG_HYBRIDSWAP_CORE
+static DEVICE_ATTR_RW(hybridswap_core_enable);
+static DEVICE_ATTR_RW(hybridswap_loop_device);
+static DEVICE_ATTR_RW(hybridswap_dev_life);
+static DEVICE_ATTR_RW(hybridswap_quota_day);
+static DEVICE_ATTR_RO(hybridswap_report);
+static DEVICE_ATTR_RO(hybridswap_stat_snap);
+static DEVICE_ATTR_RO(hybridswap_meminfo);
+static DEVICE_ATTR_RW(hybridswap_zram_increase);
+#endif
+#endif
 
 static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_disksize.attr,
@@ -2613,6 +2666,24 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_recompress.attr,
 #endif
 	&dev_attr_algorithm_params.attr,
+#ifdef CONFIG_HYBRIDSWAP
+	&dev_attr_hybridswap_vmstat.attr,
+	&dev_attr_hybridswap_loglevel.attr,
+	&dev_attr_hybridswap_enable.attr,
+#ifdef CONFIG_HYBRIDSWAP_SWAPD
+	&dev_attr_hybridswap_swapd_pause.attr,
+#endif
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	&dev_attr_hybridswap_core_enable.attr,
+	&dev_attr_hybridswap_loop_device.attr,
+	&dev_attr_hybridswap_dev_life.attr,
+	&dev_attr_hybridswap_quota_day.attr,
+	&dev_attr_hybridswap_report.attr,
+	&dev_attr_hybridswap_stat_snap.attr,
+	&dev_attr_hybridswap_meminfo.attr,
+	&dev_attr_hybridswap_zram_increase.attr,
+#endif
+#endif
 	NULL,
 };
 
@@ -2903,6 +2974,12 @@ static int __init zram_init(void)
 		num_devices--;
 	}
 
+#ifdef CONFIG_HYBRIDSWAP
+	ret = hybridswap_pre_init();
+	if (ret)
+		goto out_error;
+#endif
+
 	return 0;
 
 out_error:
@@ -2917,6 +2994,9 @@ out_lz4p:
 static void __exit zram_exit(void)
 {
 	destroy_devices();
+	#ifdef CONFIG_HYBRIDSWAP
+	hybridswap_exit();
+	#endif
 
 #ifdef CONFIG_ZRAM_LZ4P
 	lz4p_exit();

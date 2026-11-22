@@ -73,6 +73,7 @@
 #include <linux/uaccess.h>
 
 #include <trace/events/vmscan.h>
+#include <trace/hooks/vh_vmscan.h>
 
 struct cgroup_subsys memory_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(memory_cgrp_subsys);
@@ -4505,6 +4506,9 @@ static DEFINE_IDR(mem_cgroup_idr);
 static void mem_cgroup_id_remove(struct mem_cgroup *memcg)
 {
 	if (memcg->id.id > 0) {
+		#ifdef CONFIG_HYBRIDSWAP
+		trace_android_vh_mem_cgroup_id_remove(memcg);
+		#endif
 		idr_remove(&mem_cgroup_idr, memcg->id.id);
 		memcg->id.id = 0;
 	}
@@ -4600,6 +4604,9 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
 	free_percpu(memcg->stat_cpu);
+	#ifdef CONFIG_HYBRIDSWAP
+	trace_android_vh_mem_cgroup_free(memcg);
+	#endif
 	kfree(memcg);
 }
 
@@ -4660,6 +4667,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 #endif
 	idr_replace(&mem_cgroup_idr, memcg, memcg->id.id);
 	lru_gen_init_memcg(memcg);
+	#ifdef CONFIG_HYBRIDSWAP
+	trace_android_vh_mem_cgroup_alloc(memcg);
+	#endif
 	return memcg;
 fail:
 	mem_cgroup_id_remove(memcg);
@@ -4747,6 +4757,9 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 	atomic_set(&memcg->id.ref, 1);
 	css_get(css);
 	lru_gen_online_memcg(memcg);
+	#ifdef CONFIG_HYBRIDSWAP
+	trace_android_vh_mem_cgroup_css_online(css, memcg);
+	#endif
 	return 0;
 }
 
@@ -4754,6 +4767,9 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 	struct mem_cgroup_event *event, *tmp;
+	#ifdef CONFIG_HYBRIDSWAP
+	trace_android_vh_mem_cgroup_css_offline(css, memcg);
+	#endif
 
 	/*
 	 * Unregister events and notify userspace.

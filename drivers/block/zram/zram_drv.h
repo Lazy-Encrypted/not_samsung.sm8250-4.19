@@ -57,6 +57,13 @@ enum zram_pageflags {
 
 	ZRAM_COMP_PRIORITY_BIT1, /* First bit of comp priority index */
 	ZRAM_COMP_PRIORITY_BIT2, /* Second bit of comp priority index */
+	#ifdef CONFIG_HYBRIDSWAP_CORE
+	ZRAM_BATCHING_OUT,
+	ZRAM_FROM_HYBRIDSWAP,
+	ZRAM_MCGID_CLEAR,
+	ZRAM_IN_BD,
+	ZRAM_UNDER_WB,
+	#endif
 
 	__NR_ZRAM_PAGEFLAGS,
 };
@@ -137,6 +144,15 @@ struct zram {
 	struct block_device *bdev;
 	unsigned long *bitmap;
 	unsigned long nr_pages;
+#endif
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	struct hybridswap_area *area;
+	unsigned long increase_nr_pages;
+#ifndef CONFIG_ZRAM_WRITEBACK
+	struct file *backing_dev;
+	struct block_device *bdev;
+	unsigned long nr_pages;
+#endif
 #endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
