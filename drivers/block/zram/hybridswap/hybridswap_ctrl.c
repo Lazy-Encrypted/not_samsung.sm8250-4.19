@@ -38,7 +38,6 @@ struct hybridswap_cfg {
 	atomic_t dev_life;
 	unsigned long quota_day;
 	struct timer_list lpc_timer;
-	struct work_struct lpc_work;
 };
 
 struct hybridswap_cfg global_settings;
@@ -193,27 +192,13 @@ bool hybridswap_reach_life_protect(void)
 
 	if (hybridswap_dev_life())
 		quota /= 10;
-	return atomic64_read(&stat->reclaimin_bytes_daily) > quota;
-}
-
-static void hybridswap_life_protect_ctrl_work(struct work_struct *work)
-{
-	struct tm tm;
-	struct timespec64 ts;
-	struct hybridswap_stat *stat = hybridswap_get_stat_obj();
-
-	ktime_get_real_ts64(&ts);
-	time64_to_tm(ts.tv_sec - sys_tz.tz_minuteswest * 60, 0, &tm);
-
-	if (tm.tm_hour > 2)
-		atomic64_set(&stat->reclaimin_bytes_daily, 0);
+	return atomic64_read(&stat->reclaimin_bytes_daily) >= quota;
 }
 
 static void hybridswap_life_protect_ctrl_timer(struct timer_list *t)
 {
-	schedule_work(&global_settings.lpc_work);
-	mod_timer(&global_settings.lpc_timer,
-		  jiffies + HYBRIDSWAP_CHECK_INTERVAL * HZ);
+	atomic64_set(&global_settings.stat->reclaimin_bytes_daily, 0);
+	mod_timer(t, jiffies + HYBRIDSWAP_CHECK_INTERVAL * HZ);
 }
 
 void hybridswap_close_bdev(struct block_device *bdev, struct file *backing_dev)
@@ -368,10 +353,9 @@ static bool hybridswap_global_setting_init(struct zram *zram)
 	}
 
 	global_settings.quota_day = HYBRIDSWAP_QUOTA_DAY;
-	INIT_WORK(&global_settings.lpc_work, hybridswap_life_protect_ctrl_work);
-	global_settings.lpc_timer.expires = jiffies + HYBRIDSWAP_CHECK_INTERVAL * HZ;
 	timer_setup(&global_settings.lpc_timer, hybridswap_life_protect_ctrl_timer, 0);
-	add_timer(&global_settings.lpc_timer);
+	mod_timer(&global_settings.lpc_timer,
+		  jiffies + HYBRIDSWAP_CHECK_INTERVAL * HZ);
 
 	hybp(HYB_DEBUG, "global settings init success\n");
 	return true;
@@ -379,6 +363,7 @@ static bool hybridswap_global_setting_init(struct zram *zram)
 
 void hybridswap_global_setting_deinit(void)
 {
+	del_timer_sync(&global_settings.lpc_timer);
 	destroy_workqueue(global_settings.reclaim_wq);
 	hybridswap_free(global_settings.stat);
 	global_settings.stat = NULL;
