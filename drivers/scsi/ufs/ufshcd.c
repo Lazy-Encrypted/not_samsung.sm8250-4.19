@@ -5644,10 +5644,15 @@ static int UFS_Toshiba_query_fatal_mode(struct ufs_hba *hba)
 }
 
 #ifdef CONFIG_BLK_TURBO_WRITE
+/* Bit 31 is a separate vendor lifetime-guarantee flag. */
+#define UFS_TW_LIFETIME_EST_MASK GENMASK(7, 0)
+#define UFS_TW_LIFETIME_EXHAUSTED 0x0b
+
 /* call back for block layer */
 void ufshcd_tw_ctrl(struct scsi_device *sdev, int en)
 {
 	int err;
+	u32 lifetime;
 	struct ufs_hba *hba;
 	bool has_lock = false;
 
@@ -5693,6 +5698,16 @@ void ufshcd_tw_ctrl(struct scsi_device *sdev, int en)
 		if (hba->tw_state_not_allowed) {	// check again
 			dev_err(hba->dev, "%s: tw ctrl %s is not allowed(e.g. ufs driver is suspended)\n",
 					__func__, en ? "On" : "Off");
+			goto out_rpm_put;
+		}
+
+		err = ufshcd_query_attr_retry(hba, UPIU_QUERY_OPCODE_READ_ATTR,
+				QUERY_ATTR_IDN_WB_BUFF_LIFE_TIME_EST, 0, 0, &lifetime);
+		if (!err && (lifetime & UFS_TW_LIFETIME_EST_MASK) >=
+		    UFS_TW_LIFETIME_EXHAUSTED) {
+			dev_warn_ratelimited(hba->dev,
+					     "TurboWrite buffer lifetime exhausted: %#x\n",
+					     lifetime);
 			goto out_rpm_put;
 		}
 
