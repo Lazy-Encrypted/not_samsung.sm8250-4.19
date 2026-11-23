@@ -1967,6 +1967,9 @@ int f2fs_sync_node_pages(struct f2fs_sb_info *sbi,
 	int ret = 0;
 	int nr_pages, done = 0;
 
+	if (!get_pages(sbi, F2FS_DIRTY_NODES))
+		return 0;
+
 	pagevec_init(&pvec);
 
 next_step:
