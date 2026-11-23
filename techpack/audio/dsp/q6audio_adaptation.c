@@ -786,7 +786,7 @@ static int sec_audio_sb_rx_vol_put(struct snd_kcontrol *kcontrol,
 	port_id = afe_port.spk_rx_port;
 	ret = q6audio_get_copp_idx_from_port_id(port_id, SB_VOLUME, &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
@@ -949,7 +949,7 @@ static int sec_audio_sound_boost_put(struct snd_kcontrol *kcontrol,
 	port_id = afe_port.spk_rx_port;
 	ret = q6audio_get_copp_idx_from_port_id(port_id, func_type, &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
@@ -1028,7 +1028,7 @@ static int sec_audio_sb_rotation_put(struct snd_kcontrol *kcontrol,
 	port_id = afe_port.spk_rx_port;
 	ret = q6audio_get_copp_idx_from_port_id(port_id, func_type, &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
@@ -1057,7 +1057,7 @@ static int sec_audio_sb_flatmotion_put(struct snd_kcontrol *kcontrol,
 	port_id = afe_port.spk_rx_port;
 	ret = q6audio_get_copp_idx_from_port_id(port_id, SB_FLATMOTION, &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
