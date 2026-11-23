@@ -260,6 +260,8 @@ submit_bio_retry:
 		bio->bi_iter.bi_sector = (sector_t)blknr <<
 			LOG_SECTORS_PER_BLOCK;
 		bio->bi_opf = REQ_OP_READ;
+		if (ra)
+			bio->bi_opf |= REQ_RAHEAD;
 	}
 
 	err = bio_add_page(bio, page, PAGE_SIZE, 0);
