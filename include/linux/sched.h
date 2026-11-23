@@ -1416,6 +1416,11 @@ struct task_struct {
 #ifdef CONFIG_ANDROID_SIMPLE_LMK
 	struct task_struct		*simple_lmk_next;
 #endif
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	int				ux_state;
+	int				ux_im_flag;
+	int				ux_depth;
+#endif
 	/*
 	 * New fields for task_struct should be added above here, so that
 	 * they are included in the randomized portion of task_struct.
@@ -2182,5 +2187,7 @@ static inline void set_wake_up_idle(bool enabled)
 /* Returns effective CPU energy utilization, as seen by the scheduler */
 unsigned long sched_cpu_util(int cpu);
 #endif /* CONFIG_SMP */
+
+#include <linux/sched_assist.h>
 
 #endif

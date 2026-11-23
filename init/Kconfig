@@ -1304,6 +1304,13 @@ config SCHED_TUNE_DUMMY
 	help
 	  Create dummy SCHEDTUNE nodes to satisfy rom compability.
 
+config OPLUS_FEATURE_SCHED_ASSIST
+	bool "Oplus Sched Assist and UX tracking interface"
+	default y
+	help
+	  Provides /proc/oplus_scheduler/sched_assist/ and /proc/eas_opt/ control
+	  nodes and thread UX state tracking for OxygenOS / ColorOS frameworks.
+
 config UCLAMP_ASSIST
 	bool "UClamp configuration helper"
 	depends on ANDROID && UCLAMP_TASK && UCLAMP_TASK_GROUP
