@@ -233,12 +233,11 @@ submit_bio_retry:
 			memset(vto + map.m_plen, 0, PAGE_SIZE - map.m_plen);
 			kunmap_atomic(vto);
 			kunmap_atomic(vsrc);
-			flush_dcache_page(page);
-
-			SetPageUptodate(page);
-			/* TODO: could we unlock the page earlier? */
 			unlock_page(ipage);
 			put_page(ipage);
+
+			flush_dcache_page(page);
+			SetPageUptodate(page);
 
 			/* imply err = 0, see erofs_map_blocks */
 			goto has_updated;
