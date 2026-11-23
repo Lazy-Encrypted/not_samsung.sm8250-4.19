@@ -109,6 +109,11 @@
 #ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
 extern int dynamic_readahead_enable;
 #endif
+#ifdef CONFIG_OPLUS_UXMEM_OPT
+extern int ux_page_pool_enable;
+extern int ux_page_pool_enable_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *length, loff_t *ppos);
+#endif
 
 #if defined(CONFIG_SYSCTL)
 
@@ -1880,6 +1885,17 @@ static struct ctl_table vm_table[] = {
 		.maxlen		= sizeof(dynamic_readahead_enable),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
+#if defined(CONFIG_OPLUS_UXMEM_OPT)
+	{
+		.procname	= "ux_page_pool_enable",
+		.data		= &ux_page_pool_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= ux_page_pool_enable_handler,
 		.extra1		= &zero,
 		.extra2		= &one,
 	},

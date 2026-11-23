@@ -76,6 +76,9 @@
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
 #include "internal.h"
+#if defined(CONFIG_OPLUS_UXMEM_OPT)
+#include "ux_page_pool.h"
+#endif
 
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
@@ -1208,6 +1211,13 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	return true;
 }
 
+#ifdef CONFIG_OPLUS_UXMEM_OPT
+bool free_unref_page_prepare2(struct page *page, unsigned int order, unsigned long pfn)
+{
+	return free_pages_prepare(page, order, true);
+}
+#endif
+
 #ifdef CONFIG_DEBUG_VM
 static inline bool free_pcp_prepare(struct page *page)
 {
@@ -1467,6 +1477,18 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 		return;
 #endif
 	migratetype = get_pfnblock_migratetype(page, pfn);
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (ux_page_pool_enable) {
+		struct zone *z = page_zone(page);
+		unsigned long mark = z->_watermark[WMARK_LOW];
+		long free_pages = zone_page_state(z, NR_FREE_PAGES);
+
+		free_pages -= z->nr_reserved_highatomic;
+		if ((free_pages > mark) && ux_page_pool_refill(page, order, migratetype)) {
+			return;
+		}
+	}
+#endif
 	local_irq_save(flags);
 	__count_vm_events(PGFREE, 1 << order);
 	free_one_page(page_zone(page), page, pfn, order, migratetype);
@@ -2583,8 +2605,15 @@ static bool unreserve_highatomic_pageblock(const struct alloc_context *ac,
 		 * Preserve at least one pageblock unless memory pressure
 		 * is really high.
 		 */
-		if (!force && zone->nr_reserved_highatomic <=
-					pageblock_nr_pages)
+		if (!force &&
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+					((ux_page_pool_enable && 
+					zone->nr_reserved_highatomic <= HIGHATOMIC_MIN_RESERVED_PAGES) ||
+					 zone->nr_reserved_highatomic <= pageblock_nr_pages)
+#else
+					zone->nr_reserved_highatomic <= pageblock_nr_pages
+#endif
+			)
 			continue;
 
 		spin_lock_irqsave(&zone->lock, flags);
@@ -2847,11 +2876,26 @@ static int rmqueue_bulk(struct zone *zone, unsigned int order,
  */
 static struct list_head *get_populated_pcp_list(struct zone *zone,
 			unsigned int order, struct per_cpu_pages *pcp,
-			int migratetype, unsigned int alloc_flags)
+			int migratetype, unsigned int alloc_flags
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+			, struct page **pg)
+#else
+			)
+#endif
 {
 	struct list_head *list = &pcp->lists[migratetype];
 
 	if (list_empty(list)) {
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (ux_page_pool_enable) {
+			if (is_critical_zeroslowpath_task(current)) {
+				*pg = ux_page_pool_alloc_pages(0, migratetype == get_cma_migrate_type() \
+					? MIGRATE_MOVABLE : migratetype, false);
+				if (*pg)
+					return NULL;
+			}
+		}
+#endif
 		pcp->count += rmqueue_bulk(zone, order,
 				pcp->batch, list,
 				migratetype, alloc_flags);
@@ -3158,6 +3202,19 @@ void free_unref_page(struct page *page)
 	if (!free_unref_page_prepare(page, pfn))
 		return;
 
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (ux_page_pool_enable) {
+		unsigned long mark = zone->_watermark[WMARK_LOW];
+		long free_pages = zone_page_state(zone, NR_FREE_PAGES);
+		int migratetype = get_pcppage_migratetype(page);
+
+		free_pages -= zone->nr_reserved_highatomic;
+		if ((free_pages > mark) && ux_page_pool_refill(page, 0, migratetype)) {
+			return;
+		}
+	}
+#endif
+
 	local_irq_save(flags);
 	free_unref_page_commit(page, pfn, &dst);
 	local_irq_restore(flags);
@@ -3373,7 +3430,14 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 		if (migratetype == MIGRATE_MOVABLE &&
 				gfp_flags & __GFP_CMA) {
 			list = get_populated_pcp_list(zone, 0, pcp,
-					get_cma_migrate_type(), alloc_flags);
+					get_cma_migrate_type(), alloc_flags
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+					, &page);
+			if (page && list == NULL)
+				goto out;
+#else
+					);
+#endif
 		}
 
 		if (list == NULL) {
@@ -3382,7 +3446,14 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 			 * free CMA pages.
 			 */
 			list = get_populated_pcp_list(zone, 0, pcp,
-					migratetype, alloc_flags);
+					migratetype, alloc_flags
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+					, &page);
+			if (page && list == NULL)
+				goto out;
+#else
+					);
+#endif
 			if (unlikely(list == NULL) ||
 					unlikely(list_empty(list)))
 				return NULL;
@@ -3394,6 +3465,9 @@ static struct page *__rmqueue_pcplist(struct zone *zone, int migratetype,
 		pcp->count--;
 	} while (check_new_pcp(page));
 
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+out:
+#endif
 	return page;
 }
 
@@ -3856,6 +3930,15 @@ retry:
 		     (alloc_flags & (ALLOC_HARDER | ALLOC_HIGH)))) {
 			mark = zone->_watermark[WMARK_MIN];
 		}
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (ux_page_pool_enable) {
+			if (likely((alloc_flags & ALLOC_WMARK_MASK) == ALLOC_WMARK_MIN)) {
+				if (unlikely(test_task_ux(current))) {
+					mark -= mark / 2;
+				}
+			}
+		}
+#endif /* OPLUS_UXMEM_OPT */
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac_classzone_idx(ac), alloc_flags)) {
 			int ret;
@@ -4831,6 +4914,30 @@ retry:
 		alloc_flags |= ALLOC_HIGH;
 		goto retry;
 	}
+
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (ux_page_pool_enable) {
+		/*
+		 * 1. Get page from ux page pool
+		 * 2. Set alloc_flags ALLOC_HARDER, and get page from buddy
+		 *    when get page fail from ux pool
+		 */
+		if (is_critical_zeroslowpath_task(current)) {
+			page = ux_page_pool_alloc_pages(order, ac->migratetype, true);
+			if (page) {
+				prep_new_page(page, order, gfp_mask, alloc_flags);
+				goto got_pg;
+			} else if (!(alloc_flags & (ALLOC_HARDER | ALLOC_OOM)) && !in_interrupt() &&
+				   (ac->preferred_zoneref->zone->nr_reserved_highatomic >=
+				    (HIGHATOMIC_MIN_RESERVED_PAGES / 2))) {
+				alloc_flags |= ALLOC_HARDER;
+				page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+				if (page)
+					goto got_pg;
+			}
+		}
+	}
+#endif /* OPLUS_UXMEM_OPT */
 
 	/* Try direct reclaim and then allocating */
 	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac,
@@ -6361,7 +6468,15 @@ static void pageset_update(struct per_cpu_pages *pcp, unsigned long high,
 /* a companion to pageset_set_high() */
 static void pageset_set_batch(struct per_cpu_pageset *p, unsigned long batch)
 {
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_DYNAMIC_READAHEAD)
+	if (ux_page_pool_enable) {
+		pageset_update(&p->pcp, 12 * batch, max(1UL, 1 * batch));
+	} else {
+		pageset_update(&p->pcp, 6 * batch, max(1UL, 1 * batch));
+	}
+#else
 	pageset_update(&p->pcp, 6 * batch, max(1UL, 1 * batch));
+#endif
 }
 
 static void pageset_init(struct per_cpu_pageset *p)
@@ -8042,6 +8157,11 @@ static void __setup_per_zone_wmarks(void)
 		zone->watermark_boost = 0;
 		zone->_watermark[WMARK_LOW]  = min_wmark_pages(zone) +
 					low + min;
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (ux_page_pool_enable) {
+			zone->_watermark[WMARK_MIN] = zone->_watermark[WMARK_MIN] * 2;
+		}
+#endif
 		zone->_watermark[WMARK_HIGH] = min_wmark_pages(zone) +
 					low + min * 2;
 

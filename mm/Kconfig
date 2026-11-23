@@ -1039,3 +1039,13 @@ config OPLUS_DYNAMIC_READAHEAD
 	help
 	  Dynamically scales readahead and mmap readaround sizes based on
 	  key UX thread priority and system memory pressure.
+
+config OPLUS_UXMEM_OPT
+	bool "OnePlus UX Page Pool & Zero Slowpath optimization"
+	depends on OPLUS_FEATURE_SCHED_ASSIST
+	default y
+	help
+	  Pre-allocates order-0/order-1 pages in an emergency cache pool
+	  and intercepts slowpath direct reclaims for critical UX and
+	  UI rendering threads (SurfaceFlinger, system_server, animators).
+
