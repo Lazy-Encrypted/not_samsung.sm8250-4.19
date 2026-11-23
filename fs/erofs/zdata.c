@@ -151,10 +151,8 @@ static struct kthread_worker *erofs_init_percpu_worker(int cpu)
 
 	if (IS_ERR(worker))
 		return worker;
-	if (IS_ENABLED(CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI))
-		sched_set_fifo_low(worker->task);
-	else
-		sched_set_normal(worker->task, 0);
+	/* Always keep SCHED_NORMAL to avoid RT priority inversion against audio/display HALs */
+	sched_set_normal(worker->task, 0);
 	return worker;
 }
 
