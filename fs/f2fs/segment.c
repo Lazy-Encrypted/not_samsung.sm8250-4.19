@@ -1699,7 +1699,9 @@ static int issue_discard_thread(void *data)
 			__init_discard_policy(sbi, &dpolicy, DPOLICY_BG,
 						dcc->discard_granularity);
 
-		if (!atomic_read(&dcc->discard_cmd_cnt))
+		if (sbi->gc_mode == GC_URGENT_HIGH)
+			wait_ms = dpolicy.min_interval;
+		else if (!atomic_read(&dcc->discard_cmd_cnt))
 			wait_ms = dpolicy.max_interval;
 
 		wait_event_interruptible_timeout(*q,
@@ -1739,7 +1741,9 @@ static int issue_discard_thread(void *data)
 		} else {
 			wait_ms = dpolicy.max_interval;
 		}
-		if (!atomic_read(&dcc->discard_cmd_cnt))
+		if (sbi->gc_mode == GC_URGENT_HIGH)
+			wait_ms = dpolicy.min_interval;
+		else if (!atomic_read(&dcc->discard_cmd_cnt))
 			wait_ms = dpolicy.max_interval;
 
 		sb_end_intwrite(sbi->sb);
