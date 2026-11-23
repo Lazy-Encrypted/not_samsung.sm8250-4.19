@@ -82,6 +82,10 @@ static bool sugov_hold_freq(struct sugov_cpu *sg_cpu)
         unsigned long rq_util, max_util;
         bool ret;
 
+        /* Do not hold frequency when there are no runnable CFS tasks. */
+        if (rq->curr == rq->idle || !rq->cfs.h_nr_runnable)
+                return false;
+
         /* Do not hold frequency when UCLAMP_MAX caps the runqueue. */
         if (uclamp_is_used()) {
                 rq_util = cpu_util_cfs(rq) + cpu_util_rt(rq);
