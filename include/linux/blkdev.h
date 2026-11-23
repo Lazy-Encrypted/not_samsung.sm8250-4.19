@@ -160,6 +160,9 @@ struct request {
 	struct bio *biotail;
 
 	struct list_head queuelist;
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	struct list_head ux_fg_bg_list;
+#endif
 
 	/*
 	 * The hash is used inside the scheduler, and killed once the
@@ -489,6 +492,12 @@ struct request_queue {
 	 * Together with queue_head for cacheline sharing
 	 */
 	struct list_head	queue_head;
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	struct list_head	ux_head;
+	struct list_head	fg_head;
+	struct list_head	bg_head;
+	int			bg_max_depth;
+#endif
 	struct request		*last_merge;
 	struct elevator_queue	*elevator;
 
@@ -579,7 +588,11 @@ struct request_queue {
 	unsigned int		dma_pad_mask;
 	unsigned int		dma_alignment;
 
+#if !defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
 	unsigned int		in_flight[2];
+#else
+	unsigned int		in_flight[5];
+#endif
 	unsigned long long	in_flight_time;
 	ktime_t			in_flight_stamp;
 
@@ -730,6 +743,11 @@ struct request_queue {
 void blk_queue_flag_set(unsigned int flag, struct request_queue *q);
 void blk_queue_flag_clear(unsigned int flag, struct request_queue *q);
 bool blk_queue_flag_test_and_set(unsigned int flag, struct request_queue *q);
+
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+extern void ohm_ioqueue_add_inflight(struct request_queue *q, struct request *rq);
+extern void ohm_ioqueue_dec_inflight(struct request_queue *q, struct request *rq);
+#endif
 
 #define blk_queue_stopped(q)	test_bit(QUEUE_FLAG_STOPPED, &(q)->queue_flags)
 #define blk_queue_dying(q)	test_bit(QUEUE_FLAG_DYING, &(q)->queue_flags)

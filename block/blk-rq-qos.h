@@ -29,7 +29,11 @@ struct rq_qos_ops {
 	void (*track)(struct rq_qos *, struct request *, struct bio *);
 	void (*issue)(struct rq_qos *, struct request *);
 	void (*requeue)(struct rq_qos *, struct request *);
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	void (*done)(struct rq_qos *, struct request *, bool);
+#else
 	void (*done)(struct rq_qos *, struct request *);
+#endif
 	void (*done_bio)(struct rq_qos *, struct bio *);
 	void (*cleanup)(struct rq_qos *, struct bio *);
 	void (*exit)(struct rq_qos *);
@@ -96,7 +100,11 @@ bool rq_depth_scale_down(struct rq_depth *rqd, bool hard_throttle);
 bool rq_depth_calc_max_depth(struct rq_depth *rqd);
 
 void __rq_qos_cleanup(struct rq_qos *rqos, struct bio *bio);
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+void __rq_qos_done(struct rq_qos *rqos, struct request *rq, bool fgux);
+#else
 void __rq_qos_done(struct rq_qos *rqos, struct request *rq);
+#endif
 void __rq_qos_issue(struct rq_qos *rqos, struct request *rq);
 void __rq_qos_requeue(struct rq_qos *rqos, struct request *rq);
 void __rq_qos_throttle(struct rq_qos *rqos, struct bio *bio);
@@ -109,11 +117,19 @@ static inline void rq_qos_cleanup(struct request_queue *q, struct bio *bio)
 		__rq_qos_cleanup(q->rq_qos, bio);
 }
 
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+static inline void rq_qos_done(struct request_queue *q, struct request *rq, bool fgux)
+{
+	if (q->rq_qos)
+		__rq_qos_done(q->rq_qos, rq, fgux);
+}
+#else
 static inline void rq_qos_done(struct request_queue *q, struct request *rq)
 {
 	if (q->rq_qos)
 		__rq_qos_done(q->rq_qos, rq);
 }
+#endif
 
 static inline void rq_qos_issue(struct request_queue *q, struct request *rq)
 {

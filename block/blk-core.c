@@ -51,6 +51,10 @@
 struct dentry *blk_debugfs_root;
 #endif
 
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+#include "uxio_first/uxio_first_opt.h"
+#endif
+
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_rq_remap);
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_complete);
@@ -110,6 +114,9 @@ void blk_rq_init(struct request_queue *q, struct request *rq)
 	memset(rq, 0, sizeof(*rq));
 
 	INIT_LIST_HEAD(&rq->queuelist);
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	INIT_LIST_HEAD(&rq->ux_fg_bg_list);
+#endif
 	rq->q = q;
 	rq->__sector = (sector_t) -1;
 	INIT_HLIST_NODE(&rq->hash);
@@ -823,6 +830,12 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 		return NULL;
 
 	INIT_LIST_HEAD(&q->queue_head);
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	INIT_LIST_HEAD(&q->ux_head);
+	INIT_LIST_HEAD(&q->fg_head);
+	INIT_LIST_HEAD(&q->bg_head);
+	q->bg_max_depth = BLK_MAX_BG_DEPTH;
+#endif
 	q->last_merge = NULL;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, gfp_mask);
@@ -1169,6 +1182,13 @@ void blk_init_request_from_bio(struct request *req, struct bio *bio)
 	if (bio->bi_opf & REQ_RAHEAD)
 		req->cmd_flags |= REQ_FAILFAST_MASK;
 
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	if (bio->bi_opf & REQ_UX)
+		req->cmd_flags |= REQ_UX;
+	else if (bio->bi_opf & REQ_FG)
+		req->cmd_flags |= REQ_FG;
+#endif
+
 	req->__sector = bio->bi_iter.bi_sector;
 	if (ioprio_valid(bio_prio(bio)))
 		req->ioprio = bio_prio(bio);
@@ -1394,6 +1414,13 @@ generic_make_request_checks(struct bio *bio)
 
 	if (!blkcg_bio_issue_check(q, bio))
 		return false;
+
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	if (test_task_ux(current))
+		bio->bi_opf |= REQ_UX;
+	else if (high_prio_for_task(current))
+		bio->bi_opf |= REQ_FG;
+#endif
 
 	if (!bio_flagged(bio, BIO_TRACE_COMPLETION)) {
 		trace_block_bio_queue(q, bio);
@@ -1861,6 +1888,10 @@ void blk_account_io_done(struct request *req, u64 now)
 		part_stat_add(cpu, part, nsecs[sgrp], now - req->start_time_ns);
 		part_stat_add(cpu, part, time_in_queue, nsecs_to_jiffies64(now - req->start_time_ns));
 		part_dec_in_flight(req->q, part, rq_data_dir(req));
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+		req->q->in_flight[rq_is_sync(req)]--;
+		ohm_ioqueue_dec_inflight(req->q, req);
+#endif
 		if (!(req->rq_flags & RQF_STARTED))
 			part_stat_inc(cpu, part, flush_ios);
 
@@ -1901,6 +1932,10 @@ void blk_account_io_start(struct request *rq, bool new_io)
 			hd_struct_get(part);
 		}
 		part_inc_in_flight(rq->q, part, rw);
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+		rq->q->in_flight[rq_is_sync(rq)]++;
+		ohm_ioqueue_add_inflight(rq->q, rq);
+#endif
 		rq->part = part;
 	}
 
@@ -1908,6 +1943,25 @@ void blk_account_io_start(struct request *rq, bool new_io)
 
 	part_stat_unlock();
 }
+
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+bool blk_pm_allow_request(struct request *rq)
+{
+	switch (rq->q->rpm_status) {
+	case RPM_RESUMING:
+	case RPM_SUSPENDING:
+		return rq->rq_flags & RQF_PM;
+	case RPM_SUSPENDED:
+		return false;
+	case RPM_ACTIVE:
+		return true;
+	default:
+		WARN_ON_ONCE(1);
+		return false;
+	}
+}
+EXPORT_SYMBOL(blk_pm_allow_request);
+#endif
 
 /*
  * Steal bios from a request and add them to a bio list.

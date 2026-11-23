@@ -1079,7 +1079,42 @@ static struct queue_sysfs_entry queue_tw_off_delay_ms_entry = {
 };
 #endif
 
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+static ssize_t queue_bg_max_depth_show(struct request_queue *q, char *page)
+{
+	int bg_max = q->bg_max_depth > 0 ? q->bg_max_depth : 24;
+
+	return sprintf(page, "%d\n", bg_max);
+}
+
+static ssize_t queue_bg_max_depth_store(struct request_queue *q,
+					const char *page, size_t count)
+{
+	unsigned long val;
+	int ret;
+
+	ret = queue_var_store(&val, page, count);
+	if (ret < 0)
+		return ret;
+
+	if (q->queue_depth && val > q->queue_depth)
+		return -EINVAL;
+
+	q->bg_max_depth = val;
+	return (ssize_t)count;
+}
+
+static struct queue_sysfs_entry queue_bg_max_depth_entry = {
+	.attr = {.name = "bg_max_depth", .mode = S_IRUGO | S_IWUSR },
+	.show = queue_bg_max_depth_show,
+	.store = queue_bg_max_depth_store,
+};
+#endif
+
 static struct attribute *default_attrs[] = {
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	&queue_bg_max_depth_entry.attr,
+#endif
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
 	&queue_max_hw_sectors_entry.attr,

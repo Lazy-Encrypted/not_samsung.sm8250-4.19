@@ -254,4 +254,6 @@ config BLK_MQ_RDMA
 config BLK_PM
 	def_bool BLOCK && PM
 
+source block/uxio_first/Kconfig
+
 source block/Kconfig.iosched

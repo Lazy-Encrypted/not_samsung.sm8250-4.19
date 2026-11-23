@@ -36,6 +36,16 @@ void __rq_qos_cleanup(struct rq_qos *rqos, struct bio *bio)
 	} while (rqos);
 }
 
+#if defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+void __rq_qos_done(struct rq_qos *rqos, struct request *rq, bool fgux)
+{
+	do {
+		if (rqos->ops->done)
+			rqos->ops->done(rqos, rq, fgux);
+		rqos = rqos->next;
+	} while (rqos);
+}
+#else
 void __rq_qos_done(struct rq_qos *rqos, struct request *rq)
 {
 	do {
@@ -44,6 +54,7 @@ void __rq_qos_done(struct rq_qos *rqos, struct request *rq)
 		rqos = rqos->next;
 	} while (rqos);
 }
+#endif
 
 void __rq_qos_issue(struct rq_qos *rqos, struct request *rq)
 {
