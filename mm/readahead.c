@@ -23,6 +23,9 @@
 #include <linux/fadvise.h>
 
 #include "internal.h"
+#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
+#include "dynamic_readhead.h"
+#endif
 
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
@@ -394,6 +397,11 @@ ondemand_readahead(struct address_space *mapping,
 	 */
 	if (req_size > max_pages && bdi->io_pages > max_pages)
 		max_pages = min(req_size, bdi->io_pages);
+
+#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
+	if (dynamic_readahead_enable)
+		max_pages = adjust_readahead(ra, max_pages);
+#endif
 
 	/*
 	 * start of file

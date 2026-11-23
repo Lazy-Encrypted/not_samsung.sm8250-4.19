@@ -106,6 +106,9 @@
 #ifdef CONFIG_OPLUS_MULTI_KSWAPD
 #include <linux/multi_kswapd.h>
 #endif
+#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
+extern int dynamic_readahead_enable;
+#endif
 
 #if defined(CONFIG_SYSCTL)
 
@@ -1868,6 +1871,17 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= kswapd_threads_sysctl_handler,
 		.extra1		= &one,
 		.extra2		= &max_kswapd_threads,
+	},
+#endif
+#if defined(CONFIG_OPLUS_DYNAMIC_READAHEAD)
+	{
+		.procname	= "dynamic_readahead_enable",
+		.data		= &dynamic_readahead_enable,
+		.maxlen		= sizeof(dynamic_readahead_enable),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 #endif
 	{

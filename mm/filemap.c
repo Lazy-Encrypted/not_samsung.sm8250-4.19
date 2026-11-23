@@ -39,6 +39,9 @@
 #include <linux/delayacct.h>
 #include <linux/psi.h>
 #include "internal.h"
+#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
+#include "dynamic_readhead.h"
+#endif
 
 #ifdef CONFIG_PAGE_BOOST_RECORDING
 #include <linux/io_record.h>
@@ -2680,10 +2683,21 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	 * mmap read-around
 	 */
 	fpin = maybe_unlock_mmap_for_io(vmf, fpin);
+#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
+	if (dynamic_readahead_enable) {
+		adjust_readaround(ra, offset);
+	} else {
+		ra_pages = min_t(unsigned int, ra->ra_pages, mmap_readaround_limit);
+		ra->start = max_t(long, 0, offset - ra_pages / 2);
+		ra->size = ra_pages;
+		ra->async_size = ra_pages / 4;
+	}
+#else
 	ra_pages = min_t(unsigned int, ra->ra_pages, mmap_readaround_limit);
 	ra->start = max_t(long, 0, offset - ra_pages / 2);
 	ra->size = ra_pages;
 	ra->async_size = ra_pages / 4;
+#endif
 	ra_submit(ra, mapping, file);
 	return fpin;
 }

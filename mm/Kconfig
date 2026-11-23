@@ -1032,3 +1032,10 @@ config OPLUS_MULTI_KSWAPD
 	help
 	  Parallel multi-threaded kswapd reclamation per node to accelerate
 	  background memory reclamation for ZRAM and swap devices.
+
+config OPLUS_DYNAMIC_READAHEAD
+	bool "Enable OnePlus dynamic readahead"
+	default y
+	help
+	  Dynamically scales readahead and mmap readaround sizes based on
+	  key UX thread priority and system memory pressure.
