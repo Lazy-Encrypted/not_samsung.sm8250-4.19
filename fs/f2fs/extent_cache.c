@@ -1146,11 +1146,15 @@ static void __drop_extent_tree(struct inode *inode, enum extent_type type)
 	if (!__may_extent_tree(inode, type))
 		return;
 
-	write_lock(&et->lock);
 	set_inode_flag(inode, FI_NO_EXTENT);
+
+	if (!atomic_read(&et->node_cnt) &&
+	    (type != EX_READ || !et->largest.len))
+		return;
+
+	write_lock(&et->lock);
 	__free_extent_tree(sbi, et);
 	if (type == EX_READ) {
-		set_inode_flag(inode, FI_NO_EXTENT);
 		if (et->largest.len) {
 			et->largest.len = 0;
 			updated = true;
