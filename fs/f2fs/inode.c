@@ -739,8 +739,7 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 
-	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
-			inode->i_ino == F2FS_META_INO(sbi))
+	if (is_meta_ino(sbi, inode->i_ino))
 		return 0;
 
 	/*
