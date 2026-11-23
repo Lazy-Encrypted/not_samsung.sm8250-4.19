@@ -182,6 +182,11 @@ static int cluster_select_deepest(struct lpm_cluster *cluster)
 
 	for (i = cluster->nlevels - 1; i >= 0; i--) {
 		struct lpm_cluster_level *level = &cluster->levels[i];
+
+		if (!cpumask_equal(&cluster->num_children_in_sync,
+					&level->num_cpu_votes))
+			continue;
+
 		if (level->notify_rpm) {
 			if (!(sys_pm_ops && sys_pm_ops->sleep_allowed))
 				continue;
@@ -506,24 +511,93 @@ static int psci_enter_sleep(struct lpm_cpu *cpu, int idx, bool from_idle)
 	return ret;
 }
 
+static int cpu_power_select(struct cpuidle_device *dev,
+		struct lpm_cpu *cpu)
+{
+	ktime_t delta_next;
+	int best_level = 0;
+	uint32_t latency_us = pm_qos_request_for_cpu(PM_QOS_CPU_DMA_LATENCY,
+							dev->cpu);
+	s64 sleep_us = ktime_to_us(tick_nohz_get_sleep_length(&delta_next));
+	int i;
+	uint32_t lvl_latency_us = 0;
+	uint32_t min_residency;
+	struct power_params *pwr_params;
+
+	if (cpu_isolated(dev->cpu) || sleep_us < 0)
+		return 0;
+
+	for (i = 0; i < cpu->nlevels; i++) {
+		if (!lpm_cpu_mode_allow(dev->cpu, i, true))
+			continue;
+
+		pwr_params = &cpu->levels[i].pwr;
+		lvl_latency_us = pwr_params->exit_latency;
+		min_residency = pwr_params->min_residency;
+
+		if (latency_us < lvl_latency_us)
+			break;
+
+		if (sleep_us < min_residency)
+			break;
+
+		best_level = i;
+	}
+
+	return best_level;
+}
+
 static int lpm_cpuidle_select(struct cpuidle_driver *drv,
 		struct cpuidle_device *dev, bool *stop_tick)
 {
-#ifdef CONFIG_NO_HZ_COMMON
-	ktime_t delta_next;
-	s64 duration_ns = tick_nohz_get_sleep_length(&delta_next);
+	struct lpm_cpu *cpu = per_cpu(cpu_lpm, dev->cpu);
+	int idx;
 
-	if (duration_ns <= TICK_NSEC)
-		*stop_tick = false;
+	if (!cpu)
+		return 0;
+
+	idx = cpu_power_select(dev, cpu);
+
+#ifdef CONFIG_NO_HZ_COMMON
+	if (idx == 0) {
+		ktime_t delta_next;
+		s64 duration_ns = tick_nohz_get_sleep_length(&delta_next);
+
+		if (duration_ns <= TICK_NSEC)
+			*stop_tick = false;
+	}
 #endif
 
-	return 0;
+	return idx;
 }
 
 static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 		struct cpuidle_driver *drv, int idx)
 {
-	wfi();
+	struct lpm_cpu *cpu = per_cpu(cpu_lpm, dev->cpu);
+	bool success = false;
+	const struct cpumask *cpumask = get_cpu_mask(dev->cpu);
+	ktime_t start = ktime_get();
+	uint64_t start_time = ktime_to_ns(start), end_time;
+
+	cpu_prepare(cpu, idx, true);
+	cluster_prepare(cpu->parent, cpumask, idx, true, start_time);
+
+	trace_cpu_idle_enter(idx);
+	lpm_stats_cpu_enter(idx, start_time);
+
+	if (need_resched())
+		goto exit;
+
+	success = (psci_enter_sleep(cpu, idx, true) == 0);
+
+exit:
+	end_time = ktime_to_ns(ktime_get());
+	lpm_stats_cpu_exit(idx, end_time, success);
+	trace_cpu_idle_exit(idx, success);
+
+	cluster_unprepare(cpu->parent, cpumask, idx, true, end_time, success);
+	cpu_unprepare(cpu, idx, true);
 	return idx;
 }
 
