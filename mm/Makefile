@@ -118,6 +118,7 @@ obj-$(CONFIG_MEMFD_CREATE) += memfd.o
 obj-$(CONFIG_MEMFD_ASHMEM_SHIM) += memfd-ashmem-shim.o
 obj-$(CONFIG_PROCESS_RECLAIM)	+= process_reclaim.o
 obj-$(CONFIG_PAGE_BOOST_RECORDING) += io_record.o
+obj-$(CONFIG_OPLUS_MULTI_KSWAPD) += multi_kswapd.o
 
 # [IOPP-Wformat-v1.0.4.14.patch]
 # check calls to printf and scanf, etc.,

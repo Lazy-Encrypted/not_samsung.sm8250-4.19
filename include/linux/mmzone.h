@@ -21,6 +21,9 @@
 #include <linux/atomic.h>
 #include <linux/android_kabi.h>
 #include <asm/page.h>
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+#include <linux/multi_kswapd.h>
+#endif
 
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
@@ -1007,8 +1010,12 @@ typedef struct pglist_data {
 	int node_id;
 	wait_queue_head_t kswapd_wait;
 	wait_queue_head_t pfmemalloc_wait;
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+	struct task_struct *kswapd[MAX_KSWAPD_THREADS];
+#else
 	struct task_struct *kswapd;	/* Protected by
 					   mem_hotplug_begin/end() */
+#endif
 	int kswapd_order;
 	enum zone_type kswapd_classzone_idx;
 

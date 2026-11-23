@@ -103,6 +103,9 @@
 #ifdef CONFIG_HUGEPAGE_POOL
 #include <linux/hugepage_pool.h>
 #endif
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+#include <linux/multi_kswapd.h>
+#endif
 
 #if defined(CONFIG_SYSCTL)
 
@@ -1856,6 +1859,17 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= watermark_boost_factor_sysctl_handler,
 		.extra1		= &zero,
 	},
+#if defined(CONFIG_OPLUS_MULTI_KSWAPD)
+	{
+		.procname	= "kswapd_threads",
+		.data		= &kswapd_threads,
+		.maxlen		= sizeof(kswapd_threads),
+		.mode		= 0644,
+		.proc_handler	= kswapd_threads_sysctl_handler,
+		.extra1		= &one,
+		.extra2		= &max_kswapd_threads,
+	},
+#endif
 	{
 		.procname	= "watermark_scale_factor",
 		.data		= &watermark_scale_factor,

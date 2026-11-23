@@ -1025,3 +1025,10 @@ config MEMFD_ASHMEM_SHIM
 config VMSTAT_INTERVAL
 	int "Default interval in seconds to update vmstat"
 	default 20
+
+config OPLUS_MULTI_KSWAPD
+	bool "Enable OnePlus multi kswapd"
+	default y
+	help
+	  Parallel multi-threaded kswapd reclamation per node to accelerate
+	  background memory reclamation for ZRAM and swap devices.

@@ -38,6 +38,9 @@
 #include <linux/cpuset.h>
 #include <linux/compaction.h>
 #include <linux/notifier.h>
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+#include <linux/multi_kswapd.h>
+#endif
 #include <linux/rwsem.h>
 #include <linux/delay.h>
 #include <linux/kthread.h>
@@ -7271,7 +7274,11 @@ static struct cpumask kswapd_cpumask;
  * If there are applications that are active memory-allocators
  * (most normal use), this basically shouldn't matter.
  */
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+int kswapd(void *p)
+#else
 static int kswapd(void *p)
+#endif
 {
 	unsigned int alloc_order, reclaim_order;
 	unsigned int classzone_idx = MAX_NR_ZONES - 1;
@@ -7456,6 +7463,9 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
    restore their cpu bindings. */
 static int kswapd_cpu_online(unsigned int cpu)
 {
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+	return kswapd_cpu_online_ext(cpu);
+#else
 	int nid;
 
 	for_each_node_state(nid, N_MEMORY) {
@@ -7472,6 +7482,7 @@ static int kswapd_cpu_online(unsigned int cpu)
 			set_cpus_allowed_ptr(pgdat->kswapd, mask);
 	}
 	return 0;
+#endif
 }
 
 /*
@@ -7480,6 +7491,9 @@ static int kswapd_cpu_online(unsigned int cpu)
  */
 int kswapd_run(int nid)
 {
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+	return kswapd_run_ext(nid);
+#else
 	pg_data_t *pgdat = NODE_DATA(nid);
 	int ret = 0;
 
@@ -7495,6 +7509,7 @@ int kswapd_run(int nid)
 		pgdat->kswapd = NULL;
 	}
 	return ret;
+#endif
 }
 
 /*
@@ -7503,12 +7518,16 @@ int kswapd_run(int nid)
  */
 void kswapd_stop(int nid)
 {
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+	kswapd_stop_ext(nid);
+#else
 	struct task_struct *kswapd = NODE_DATA(nid)->kswapd;
 
 	if (kswapd) {
 		kthread_stop(kswapd);
 		NODE_DATA(nid)->kswapd = NULL;
 	}
+#endif
 }
 
 #ifdef CONFIG_KSWAPD_PERFTUNE
