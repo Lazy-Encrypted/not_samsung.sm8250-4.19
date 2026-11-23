@@ -569,7 +569,8 @@ static bool __lookup_extent_tree(struct inode *inode, pgoff_t pgofs,
 	spin_unlock(&eti->extent_lock);
 	ret = true;
 out:
-	stat_inc_total_hit(sbi, type);
+	if (ret)
+		stat_inc_total_hit(sbi, type);
 	read_unlock(&et->lock);
 
 	if (type == EX_READ)
