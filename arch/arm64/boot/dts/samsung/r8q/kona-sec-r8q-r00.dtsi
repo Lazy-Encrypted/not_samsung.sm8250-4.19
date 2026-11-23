@@ -116,7 +116,7 @@
 	status = "disabled";
 };
 
-/* Camera RBIN set to 500 MB for test */
+/* Camera RBIN resized to 96 MB (frees ~404 MB physical RAM for system) */
 &camera_mem {
-	rbin_size = <0x1F400000>;
+	rbin_size = <0x06000000>;
 };
