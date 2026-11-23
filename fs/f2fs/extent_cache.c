@@ -539,6 +539,10 @@ static bool __lookup_extent_tree(struct inode *inode, pgoff_t pgofs,
 
 	trace_f2fs_lookup_extent_tree_start(inode, pgofs, type);
 
+	if (!atomic_read(&et->node_cnt) &&
+	    (type != EX_READ || !READ_ONCE(et->largest.len)))
+		return false;
+
 	read_lock(&et->lock);
 
 	if (type == EX_READ &&
