@@ -110,7 +110,7 @@ static int erofs_map_blocks_flatmode(struct inode *inode,
 	nblocks = DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
 	lastblk = nblocks - tailendpacking;
 
-	if (offset >= inode->i_size) {
+	if (unlikely(offset >= inode->i_size)) {
 		/* leave out-of-bound access unmapped */
 		map->m_flags = 0;
 		map->m_plen = 0;
@@ -120,7 +120,7 @@ static int erofs_map_blocks_flatmode(struct inode *inode,
 	/* there is no hole in flatmode */
 	map->m_flags = EROFS_MAP_MAPPED;
 
-	if (offset < blknr_to_addr(lastblk)) {
+	if (likely(offset < blknr_to_addr(lastblk))) {
 		map->m_pa = blknr_to_addr(vi->raw_blkaddr) + map->m_la;
 		map->m_plen = blknr_to_addr(lastblk) - offset;
 	} else if (tailendpacking) {
