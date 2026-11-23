@@ -529,21 +529,29 @@ static void z_erofs_try_to_claim_pcluster(struct z_erofs_collector *clt)
 	struct z_erofs_pcluster *pcl = clt->pcl;
 	z_erofs_next_pcluster_t *owned_head = &clt->owned_head;
 
-	/* type 1, nil pcluster (this pcluster doesn't belong to any chain.) */
-	if (cmpxchg(&pcl->next, Z_EROFS_PCLUSTER_NIL,
-		    *owned_head) == Z_EROFS_PCLUSTER_NIL) {
+	/* let's claim these following types of pclusters */
+retry:
+	if (pcl->next == Z_EROFS_PCLUSTER_NIL) {
+		/* type 1, nil pcluster */
+		if (cmpxchg(&pcl->next, Z_EROFS_PCLUSTER_NIL,
+			    *owned_head) != Z_EROFS_PCLUSTER_NIL)
+			goto retry;
+
 		*owned_head = &pcl->next;
 		/* so we can attach this pcluster to our submission chain. */
 		clt->mode = COLLECT_PRIMARY_FOLLOWED;
 		return;
 	}
 
-	/*
-	 * type 2, link to the end of an existing open chain, be careful
-	 * that its submission is controlled by the original attached chain.
-	 */
-	if (cmpxchg(&pcl->next, Z_EROFS_PCLUSTER_TAIL,
-		    *owned_head) == Z_EROFS_PCLUSTER_TAIL) {
+	if (pcl->next == Z_EROFS_PCLUSTER_TAIL) {
+		/*
+		 * type 2, link to the end of an existing open chain,
+		 * be careful that its submission is governed by the original
+		 * owned chain.
+		 */
+		if (cmpxchg(&pcl->next, Z_EROFS_PCLUSTER_TAIL,
+			    *owned_head) != Z_EROFS_PCLUSTER_TAIL)
+			goto retry;
 		*owned_head = Z_EROFS_PCLUSTER_TAIL;
 		clt->mode = COLLECT_PRIMARY_HOOKED;
 		clt->tailpcl = NULL;
