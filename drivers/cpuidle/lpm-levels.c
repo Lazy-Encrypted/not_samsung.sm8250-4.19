@@ -176,15 +176,21 @@ static uint64_t get_cluster_sleep_time(struct lpm_cluster *cluster,
 		return 0;
 }
 
-static int cluster_select_deepest(struct lpm_cluster *cluster)
+static int cluster_select_deepest(struct lpm_cluster *cluster, bool from_idle)
 {
 	int i;
 
 	for (i = cluster->nlevels - 1; i >= 0; i--) {
 		struct lpm_cluster_level *level = &cluster->levels[i];
 
+		if (!lpm_cluster_mode_allow(cluster, i, from_idle))
+			continue;
+
 		if (!cpumask_equal(&cluster->num_children_in_sync,
 					&level->num_cpu_votes))
+			continue;
+
+		if (suspend_in_progress && from_idle && level->notify_rpm)
 			continue;
 
 		if (level->notify_rpm) {
@@ -211,7 +217,7 @@ static int cluster_select(struct lpm_cluster *cluster, bool from_idle)
 		return -EINVAL;
 
 	if (cluster_use_deepest_state)
-		return cluster_select_deepest(cluster);
+		return cluster_select_deepest(cluster, from_idle);
 
 	sleep_us = (uint32_t)get_cluster_sleep_time(cluster, from_idle);
 
@@ -502,7 +508,7 @@ static int psci_enter_sleep(struct lpm_cpu *cpu, int idx, bool from_idle)
 	affinity_level = PSCI_AFFINITY_LEVEL(affinity_level);
 	state_id += power_state + affinity_level + cpu->levels[idx].psci_id;
 
-	ret = !arm_cpuidle_suspend(state_id);
+	ret = arm_cpuidle_suspend(state_id);
 	success = (ret == 0);
 
 	if (from_idle && cpu->levels[idx].use_bc_timer)
@@ -877,8 +883,8 @@ static int lpm_suspend_enter(suspend_state_t state)
 			break;
 	}
 	if (idx < 0) {
-		pr_err("Failed suspend\n");
-		return 0;
+		pr_err("Failed suspend: no allowed cpu levels\n");
+		return -EINVAL;
 	}
 	cpu_prepare(lpm_cpu, idx, false);
 	cluster_prepare(cluster, cpumask, idx, false, 0);
@@ -888,7 +894,7 @@ static int lpm_suspend_enter(suspend_state_t state)
 
 	cluster_unprepare(cluster, cpumask, idx, false, 0, success);
 	cpu_unprepare(lpm_cpu, idx, false);
-	return 0;
+	return ret;
 }
 
 static const struct platform_suspend_ops lpm_suspend_ops = {

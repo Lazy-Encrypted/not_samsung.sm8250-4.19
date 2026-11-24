@@ -170,8 +170,6 @@ static ssize_t mem_sleep_store(struct kobject *kobj, struct kobj_attribute *attr
 	suspend_state_t state;
 	int error;
 
-	/* Don't allow userspace to select s2idle */
-	return n;
 	error = pm_autosleep_lock();
 	if (error)
 		return error;
@@ -182,6 +180,11 @@ static ssize_t mem_sleep_store(struct kobject *kobj, struct kobj_attribute *attr
 	}
 
 	state = decode_suspend_state(buf, n);
+	if (state == PM_SUSPEND_TO_IDLE) {
+		/* Don't allow userspace to select s2idle */
+		goto out;
+	}
+
 	if (state < PM_SUSPEND_MAX && state > PM_SUSPEND_ON)
 		mem_sleep_current = state;
 	else

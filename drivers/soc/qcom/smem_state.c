@@ -54,6 +54,9 @@ int qcom_smem_state_update_bits(struct qcom_smem_state *state,
 				u32 mask,
 				u32 value)
 {
+	if (!state || IS_ERR(state))
+		return -EINVAL;
+
 	if (state->orphan)
 		return -ENXIO;
 
