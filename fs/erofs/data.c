@@ -95,6 +95,118 @@ void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
 	return buf->base + (offset & ~PAGE_MASK);
 }
 
+int erofs_map_dev(struct super_block *sb, struct erofs_map_dev *map)
+{
+	struct erofs_dev_context *devs = EROFS_SB(sb)->devs;
+	struct erofs_device_info *dif;
+	erofs_off_t startoff;
+	int id;
+
+	map->m_sb = sb;
+	map->m_dif = &EROFS_SB(sb)->dif0;
+	map->m_bdev = sb->s_bdev;
+
+	if (map->m_deviceid) {
+		down_read(&devs->rwsem);
+		dif = idr_find(&devs->tree, map->m_deviceid - 1);
+		if (!dif) {
+			up_read(&devs->rwsem);
+			return -ENODEV;
+		}
+		if (devs->flatdev) {
+			map->m_pa += (erofs_off_t)dif->uniaddr << sb->s_blocksize_bits;
+			up_read(&devs->rwsem);
+			return 0;
+		}
+		map->m_dif = dif;
+		map->m_bdev = dif->bdev;
+		up_read(&devs->rwsem);
+	} else if (devs && devs->extra_devices && !devs->flatdev) {
+		down_read(&devs->rwsem);
+		idr_for_each_entry(&devs->tree, dif, id) {
+			if (!dif->uniaddr)
+				continue;
+
+			startoff = (erofs_off_t)dif->uniaddr << sb->s_blocksize_bits;
+			if (map->m_pa >= startoff &&
+			    map->m_pa < startoff + ((erofs_off_t)dif->blocks << sb->s_blocksize_bits)) {
+				map->m_pa -= startoff;
+				map->m_dif = dif;
+				map->m_bdev = dif->bdev;
+				break;
+			}
+		}
+		up_read(&devs->rwsem);
+	}
+	return 0;
+}
+
+int erofs_map_chunks(struct inode *inode, struct erofs_map_blocks *map)
+{
+	struct erofs_buf buf = __EROFS_BUF_INITIALIZER;
+	struct super_block *sb = inode->i_sb;
+	struct erofs_inode *vi = EROFS_I(inode);
+	struct erofs_inode_chunk_index *idx;
+	unsigned int unit = (vi->chunkformat & EROFS_CHUNK_FORMAT_INDEXES) ?
+		sizeof(*idx) : EROFS_BLOCK_MAP_ENTRY_SIZE;
+	u64 nr = map->m_la >> vi->chunkbits, chunksize = 1ULL << vi->chunkbits;
+	erofs_off_t pos = ALIGN(iloc(EROFS_SB(sb), vi->nid) + vi->inode_isize +
+				vi->xattr_isize, unit) + unit * nr;
+	erofs_off_t endpos = round_up(pos + 1, sb->s_blocksize);
+	u64 addrmask, startblk, last;
+	void *kaddr;
+
+	kaddr = erofs_read_metabuf(&buf, sb, erofs_blknr(pos), EROFS_KMAP_ATOMIC);
+	if (IS_ERR(kaddr))
+		return PTR_ERR(kaddr);
+
+	idx = kaddr + erofs_blkoff(pos);
+	if (vi->chunkformat & EROFS_CHUNK_FORMAT_INDEXES) {
+		addrmask = (vi->chunkformat & EROFS_CHUNK_FORMAT_48BIT) ?
+			BIT_ULL(48) - 1 : BIT_ULL(32) - 1;
+		startblk = (((u64)le16_to_cpu(idx->startblk_hi) << 32) |
+			    le32_to_cpu(idx->startblk_lo)) & addrmask;
+		last = startblk;
+		if ((startblk ^ EROFS_NULL_ADDR) & addrmask) {
+			map->m_deviceid = le16_to_cpu(idx->device_id) &
+				EROFS_SB(sb)->device_id_mask;
+			map->m_pa = erofs_pos(sb, startblk);
+			map->m_flags = EROFS_MAP_MAPPED;
+		} else {
+			map->m_flags = 0;
+		}
+	} else {
+		startblk = le32_to_cpu(*(__le32 *)idx);
+		last = startblk;
+		if (startblk != (u32)EROFS_NULL_ADDR) {
+			map->m_pa = erofs_pos(sb, startblk);
+			map->m_flags = EROFS_MAP_MAPPED;
+		} else {
+			map->m_flags = 0;
+		}
+	}
+	map->m_la = nr << vi->chunkbits;
+	map->m_llen = chunksize;
+
+	while ((pos += unit) < endpos) {
+		idx = (void *)idx + unit;
+		if (vi->chunkformat & EROFS_CHUNK_FORMAT_INDEXES) {
+			u64 cur = (((u64)le16_to_cpu(idx->startblk_hi) << 32) |
+				   le32_to_cpu(idx->startblk_lo)) & addrmask;
+			if (cur != last)
+				break;
+		} else {
+			u32 cur = le32_to_cpu(*(__le32 *)idx);
+			if (cur != (u32)last)
+				break;
+		}
+		map->m_llen += chunksize;
+	}
+	map->m_plen = map->m_llen;
+	erofs_put_metabuf(&buf);
+	return 0;
+}
+
 static int erofs_map_blocks_flatmode(struct inode *inode,
 				     struct erofs_map_blocks *map,
 				     int flags)
@@ -106,6 +218,12 @@ static int erofs_map_blocks_flatmode(struct inode *inode,
 	bool tailendpacking = (vi->datalayout == EROFS_INODE_FLAT_INLINE);
 
 	trace_erofs_map_blocks_flatmode_enter(inode, map, flags);
+
+	map->m_deviceid = 0;
+	if (vi->datalayout == EROFS_INODE_CHUNK_BASED) {
+		err = erofs_map_chunks(inode, map);
+		goto out;
+	}
 
 	nblocks = DIV_ROUND_UP(inode->i_size, PAGE_SIZE);
 	lastblk = nblocks - tailendpacking;
@@ -252,15 +370,24 @@ submit_bio_retry:
 		if (nblocks > BIO_MAX_PAGES)
 			nblocks = BIO_MAX_PAGES;
 
-		bio = bio_alloc(GFP_NOIO, nblocks);
+		{
+			struct erofs_map_dev mdev;
 
-		bio->bi_end_io = erofs_readendio;
-		bio_set_dev(bio, sb->s_bdev);
-		bio->bi_iter.bi_sector = (sector_t)blknr <<
-			LOG_SECTORS_PER_BLOCK;
-		bio->bi_opf = REQ_OP_READ;
-		if (ra)
-			bio->bi_opf |= REQ_RAHEAD;
+			mdev.m_deviceid = map.m_deviceid;
+			mdev.m_pa = map.m_pa;
+			err = erofs_map_dev(sb, &mdev);
+			if (err)
+				goto err_out;
+
+			bio = bio_alloc(GFP_NOIO, nblocks);
+
+			bio->bi_end_io = erofs_readendio;
+			bio_set_dev(bio, mdev.m_bdev);
+			bio->bi_iter.bi_sector = (sector_t)(mdev.m_pa >> 9);
+			bio->bi_opf = REQ_OP_READ;
+			if (ra)
+				bio->bi_opf |= REQ_RAHEAD;
+		}
 	}
 
 	err = bio_add_page(bio, page, PAGE_SIZE, 0);

@@ -792,6 +792,41 @@ static bool should_alloc_managed_pages(struct z_erofs_decompress_frontend *fe,
 		la < fe->headoffset;
 }
 
+static int z_erofs_read_fragment(struct super_block *sb, struct page *page,
+				 unsigned int cur, unsigned int end,
+				 erofs_off_t pos)
+{
+	struct inode *packed_inode = EROFS_SB(sb)->packed_inode;
+	unsigned int cnt;
+
+	if (!packed_inode)
+		return -EFSCORRUPTED;
+
+	while (cur < end) {
+		pgoff_t index = pos >> PAGE_SHIFT;
+		unsigned int page_ofs = pos & (PAGE_SIZE - 1);
+		struct page *fpage;
+		void *kfrom, *kto;
+
+		cnt = min_t(unsigned int, end - cur, PAGE_SIZE - page_ofs);
+		fpage = read_mapping_page(packed_inode->i_mapping, index, NULL);
+		if (IS_ERR(fpage))
+			return PTR_ERR(fpage);
+
+		kfrom = kmap_atomic(fpage);
+		kto = kmap_atomic(page);
+		memcpy(kto + cur, kfrom + page_ofs, cnt);
+		kunmap_atomic(kto);
+		kunmap_atomic(kfrom);
+		put_page(fpage);
+
+		cur += cnt;
+		pos += cnt;
+	}
+	flush_dcache_page(page);
+	return 0;
+}
+
 static int z_erofs_do_read_page(struct z_erofs_decompress_frontend *fe,
 				struct page *page, struct list_head *pagepool, bool ra)
 {
@@ -836,6 +871,9 @@ repeat:
 		goto err_out;
 
 restart_now:
+	if (map->m_flags & EROFS_MAP_FRAGMENT)
+		goto hitted;
+
 	if (!(map->m_flags & EROFS_MAP_MAPPED))
 		goto hitted;
 
@@ -866,6 +904,17 @@ hitted:
 		  clt->mode != COLLECT_PRIMARY_FOLLOWED_NOINPLACE);
 
 	cur = end - min_t(erofs_off_t, offset + end - map->m_la, end);
+	if (map->m_flags & EROFS_MAP_FRAGMENT) {
+		erofs_off_t fpos = offset + cur - map->m_la;
+
+		err = z_erofs_read_fragment(inode->i_sb, page, cur, end,
+					    EROFS_I(inode)->z_fragmentoff + fpos);
+		if (err)
+			goto err_out;
+		++spiltted;
+		tight = false;
+		goto next_part;
+	}
 	if (!(map->m_flags & EROFS_MAP_MAPPED)) {
 		zero_user_segment(page, cur, end);
 		++spiltted;

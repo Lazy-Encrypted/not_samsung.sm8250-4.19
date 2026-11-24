@@ -249,6 +249,126 @@ static int erofs_load_compr_cfgs(struct super_block *sb,
 }
 #endif
 
+static void erofs_free_devices(struct erofs_sb_info *sbi)
+{
+	struct erofs_dev_context *devs = sbi->devs;
+	struct erofs_device_info *dif;
+	int id;
+
+	if (!devs)
+		return;
+
+	down_write(&devs->rwsem);
+	idr_for_each_entry(&devs->tree, dif, id) {
+		if (dif->bdev)
+			blkdev_put(dif->bdev, FMODE_READ | FMODE_EXCL);
+		kfree(dif->path);
+		kfree(dif);
+	}
+	idr_destroy(&devs->tree);
+	up_write(&devs->rwsem);
+	kfree(devs);
+	sbi->devs = NULL;
+}
+
+static int erofs_init_device(struct erofs_buf *buf, struct super_block *sb,
+			     struct erofs_device_info *dif, erofs_off_t *pos)
+{
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
+	struct erofs_deviceslot *dis;
+	struct block_device *bdev;
+
+	dis = erofs_read_metabuf(buf, sb, erofs_blknr(*pos), EROFS_KMAP_ATOMIC);
+	if (IS_ERR(dis))
+		return PTR_ERR(dis);
+
+	dis = (void *)dis + erofs_blkoff(*pos);
+	dif->blocks = le32_to_cpu(dis->blocks_lo);
+	dif->uniaddr = le32_to_cpu(dis->uniaddr_lo);
+
+	if (!sbi->devs->flatdev && !dif->path) {
+		if (!dis->tag[0]) {
+			erofs_err(sb, "empty device tag @ pos %llu", *pos);
+			return -EINVAL;
+		}
+		dif->path = kmemdup(dis->tag, sizeof(dis->tag), GFP_KERNEL);
+		if (!dif->path)
+			return -ENOMEM;
+	}
+
+	if (!sbi->devs->flatdev) {
+		bdev = blkdev_get_by_path(dif->path, FMODE_READ | FMODE_EXCL, sb->s_type);
+		if (IS_ERR(bdev))
+			return PTR_ERR(bdev);
+		dif->bdev = bdev;
+	}
+	*pos += EROFS_DEVT_SLOT_SIZE;
+	return 0;
+}
+
+static int erofs_scan_devices(struct super_block *sb,
+			      struct erofs_super_block *dsb)
+{
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
+	unsigned int ondisk_extradevs;
+	erofs_off_t pos;
+	struct erofs_buf buf = __EROFS_BUF_INITIALIZER;
+	struct erofs_device_info *dif;
+	int id, err = 0;
+
+	sbi->total_blocks = sbi->blocks;
+	if (!erofs_sb_has_device_table(sbi))
+		ondisk_extradevs = 0;
+	else
+		ondisk_extradevs = le16_to_cpu(dsb->extra_devices);
+
+	if (sbi->devs->extra_devices &&
+	    ondisk_extradevs != sbi->devs->extra_devices) {
+		erofs_err(sb, "extra devices don't match (ondisk %u, given %u)",
+			  ondisk_extradevs, sbi->devs->extra_devices);
+		return -EINVAL;
+	}
+
+	if (!ondisk_extradevs)
+		return 0;
+
+	if (!sbi->devs->extra_devices)
+		sbi->devs->flatdev = true;
+
+	sbi->device_id_mask = roundup_pow_of_two(ondisk_extradevs + 1) - 1;
+	pos = le16_to_cpu(dsb->devt_slotoff) * EROFS_DEVT_SLOT_SIZE;
+	down_read(&sbi->devs->rwsem);
+	if (sbi->devs->extra_devices) {
+		idr_for_each_entry(&sbi->devs->tree, dif, id) {
+			err = erofs_init_device(&buf, sb, dif, &pos);
+			if (err)
+				break;
+		}
+	} else {
+		for (id = 0; id < ondisk_extradevs; id++) {
+			dif = kzalloc(sizeof(*dif), GFP_KERNEL);
+			if (!dif) {
+				err = -ENOMEM;
+				break;
+			}
+
+			err = idr_alloc(&sbi->devs->tree, dif, 0, 0, GFP_KERNEL);
+			if (err < 0) {
+				kfree(dif);
+				break;
+			}
+			++sbi->devs->extra_devices;
+
+			err = erofs_init_device(&buf, sb, dif, &pos);
+			if (err)
+				break;
+		}
+	}
+	up_read(&sbi->devs->rwsem);
+	erofs_put_metabuf(&buf);
+	return err;
+}
+
 static int erofs_read_superblock(struct super_block *sb)
 {
 	struct erofs_sb_info *sbi;
@@ -300,18 +420,26 @@ static int erofs_read_superblock(struct super_block *sb)
 			  sbi->sb_size);
 		goto out;
 	}
-	sbi->blocks = le32_to_cpu(dsb->blocks);
+	sbi->blocks = le32_to_cpu(dsb->blocks_lo);
 	sbi->meta_blkaddr = le32_to_cpu(dsb->meta_blkaddr);
 #ifdef CONFIG_EROFS_FS_XATTR
 	sbi->xattr_blkaddr = le32_to_cpu(dsb->xattr_blkaddr);
 	sbi->xattr_filter_reserved = dsb->xattr_filter_reserved;
 #endif
 	sbi->islotbits = ilog2(sizeof(struct erofs_inode_compact));
-	sbi->root_nid = le16_to_cpu(dsb->root_nid);
+	if (erofs_sb_has_48bit(sbi) && dsb->rootnid_8b) {
+		sbi->root_nid = le64_to_cpu(dsb->rootnid_8b);
+		sbi->blocks |= ((u64)le16_to_cpu(dsb->rb.blocks_hi) << 32);
+	} else {
+		sbi->root_nid = le16_to_cpu(dsb->rb.rootnid_2b);
+	}
+	sbi->packed_nid = le64_to_cpu(dsb->packed_nid);
 	sbi->inos = le64_to_cpu(dsb->inos);
 
-	sbi->build_time = le64_to_cpu(dsb->build_time);
-	sbi->build_time_nsec = le32_to_cpu(dsb->build_time_nsec);
+	sbi->epoch = (s64)le64_to_cpu(dsb->epoch);
+	sbi->fixed_nsec = le32_to_cpu(dsb->fixed_nsec);
+	sbi->build_time = sbi->epoch;
+	sbi->build_time_nsec = sbi->fixed_nsec;
 
 	memcpy(&sb->s_uuid, dsb->uuid, sizeof(dsb->uuid));
 
@@ -322,6 +450,10 @@ static int erofs_read_superblock(struct super_block *sb)
 		ret = -EFSCORRUPTED;
 		goto out;
 	}
+
+	ret = erofs_scan_devices(sb, dsb);
+	if (ret)
+		goto out;
 
 	/* parse on-disk compression configurations */
 	if (erofs_sb_has_compr_cfgs(sbi))
@@ -391,6 +523,7 @@ enum {
 	Opt_acl,
 	Opt_noacl,
 	Opt_cache_strategy,
+	Opt_device,
 	Opt_err
 };
 
@@ -400,6 +533,7 @@ static match_table_t erofs_tokens = {
 	{Opt_acl, "acl"},
 	{Opt_noacl, "noacl"},
 	{Opt_cache_strategy, "cache_strategy=%s"},
+	{Opt_device, "device=%s"},
 	{Opt_err, NULL}
 };
 
@@ -457,6 +591,27 @@ static int erofs_parse_options(struct super_block *sb, char *options)
 			if (err)
 				return err;
 			break;
+		case Opt_device: {
+			struct erofs_device_info *dif;
+			char *devname = match_strdup(args);
+
+			if (!devname)
+				return -ENOMEM;
+			dif = kzalloc(sizeof(*dif), GFP_KERNEL);
+			if (!dif) {
+				kfree(devname);
+				return -ENOMEM;
+			}
+			dif->path = devname;
+			err = idr_alloc(&EROFS_SB(sb)->devs->tree, dif, 0, 0, GFP_KERNEL);
+			if (err < 0) {
+				kfree(devname);
+				kfree(dif);
+				return err;
+			}
+			++EROFS_SB(sb)->devs->extra_devices;
+			break;
+		}
 		default:
 			erofs_err(sb, "Unrecognized mount option \"%s\" or missing value", p);
 			return -EINVAL;
@@ -541,7 +696,23 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 	if (!sbi)
 		return -ENOMEM;
 
+	sbi->devs = kzalloc(sizeof(*sbi->devs), GFP_KERNEL);
+	if (!sbi->devs) {
+		kfree(sbi);
+		return -ENOMEM;
+	}
+	idr_init(&sbi->devs->tree);
+	init_rwsem(&sbi->devs->rwsem);
+
 	sb->s_fs_info = sbi;
+
+	/* set erofs default mount options */
+	erofs_default_options(sbi);
+
+	err = erofs_parse_options(sb, data);
+	if (err)
+		return err;
+
 	err = erofs_read_superblock(sb);
 	if (err)
 		return err;
@@ -553,13 +724,6 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_op = &erofs_sops;
 	sb->s_xattr = erofs_xattr_handlers;
 
-	/* set erofs default mount options */
-	erofs_default_options(sbi);
-
-	err = erofs_parse_options(sb, data);
-	if (err)
-		return err;
-
 	if (test_opt(sbi, POSIX_ACL))
 		sb->s_flags |= SB_POSIXACL;
 	else
@@ -568,6 +732,16 @@ static int erofs_fill_super(struct super_block *sb, void *data, int silent)
 #ifdef CONFIG_EROFS_FS_ZIP
 	INIT_RADIX_TREE(&sbi->workstn_tree, GFP_ATOMIC);
 #endif
+
+	/* load packed inode for fragments if present */
+	if (erofs_sb_has_fragments(sbi) && sbi->packed_nid) {
+		sbi->packed_inode = erofs_iget(sb, sbi->packed_nid, false);
+		if (IS_ERR(sbi->packed_inode)) {
+			err = PTR_ERR(sbi->packed_inode);
+			sbi->packed_inode = NULL;
+			return err;
+		}
+	}
 
 	/* get the root inode */
 	inode = erofs_iget(sb, ROOT_NID(sbi), true);
@@ -612,11 +786,17 @@ static void erofs_kill_sb(struct super_block *sb)
 
 	WARN_ON(sb->s_magic != EROFS_SUPER_MAGIC);
 
+	sbi = EROFS_SB(sb);
+	if (sbi && sbi->packed_inode) {
+		iput(sbi->packed_inode);
+		sbi->packed_inode = NULL;
+	}
+
 	kill_block_super(sb);
 
-	sbi = EROFS_SB(sb);
 	if (!sbi)
 		return;
+	erofs_free_devices(sbi);
 	kfree(sbi);
 	sb->s_fs_info = NULL;
 }
@@ -633,6 +813,9 @@ static void erofs_put_super(struct super_block *sb)
 	iput(sbi->managed_cache);
 	sbi->managed_cache = NULL;
 #endif
+	iput(sbi->packed_inode);
+	sbi->packed_inode = NULL;
+	erofs_free_devices(sbi);
 }
 
 static struct file_system_type erofs_fs_type = {
@@ -705,7 +888,7 @@ static int erofs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	buf->f_type = sb->s_magic;
 	buf->f_bsize = EROFS_BLKSIZ;
-	buf->f_blocks = sbi->blocks;
+	buf->f_blocks = sbi->total_blocks ? sbi->total_blocks : sbi->blocks;
 	buf->f_bfree = buf->f_bavail = 0;
 
 	buf->f_files = ULLONG_MAX;

@@ -122,6 +122,17 @@ static void *erofs_read_inode(struct erofs_buf *buf,
 		/* total blocks for compressed files */
 		if (erofs_inode_is_data_compressed(vi->datalayout))
 			nblks = le32_to_cpu(die->i_u.compressed_blocks);
+		else if (vi->datalayout == EROFS_INODE_CHUNK_BASED) {
+			vi->chunkbits = sb->s_blocksize_bits +
+				(die->i_u.c.chunkbits & 0x1f);
+			vi->chunkformat = le16_to_cpu(die->i_u.c.format);
+			if (vi->chunkformat & ~EROFS_CHUNK_FORMAT_ALL) {
+				erofs_err(sb, "unsupported chunk format %x of nid %llu",
+					  vi->chunkformat, vi->nid);
+				err = -EOPNOTSUPP;
+				goto err_out;
+			}
+		}
 
 		kfree(copied);
 		break;
@@ -154,12 +165,28 @@ static void *erofs_read_inode(struct erofs_buf *buf,
 		set_nlink(inode, le16_to_cpu(dic->i_nlink));
 
 		/* use build time for compact inodes */
-		inode->i_ctime.tv_sec = sbi->build_time;
-		inode->i_ctime.tv_nsec = sbi->build_time_nsec;
+		if (erofs_sb_has_mtime(sbi)) {
+			inode->i_ctime.tv_sec = sbi->epoch + le32_to_cpu(dic->i_size);
+			inode->i_ctime.tv_nsec = sbi->fixed_nsec;
+		} else {
+			inode->i_ctime.tv_sec = sbi->build_time;
+			inode->i_ctime.tv_nsec = sbi->build_time_nsec;
+		}
 
 		inode->i_size = le32_to_cpu(dic->i_size);
 		if (erofs_inode_is_data_compressed(vi->datalayout))
 			nblks = le32_to_cpu(dic->i_u.compressed_blocks);
+		else if (vi->datalayout == EROFS_INODE_CHUNK_BASED) {
+			vi->chunkbits = sb->s_blocksize_bits +
+				(dic->i_u.c.chunkbits & 0x1f);
+			vi->chunkformat = le16_to_cpu(dic->i_u.c.format);
+			if (vi->chunkformat & ~EROFS_CHUNK_FORMAT_ALL) {
+				erofs_err(sb, "unsupported chunk format %x of nid %llu",
+					  vi->chunkformat, vi->nid);
+				err = -EOPNOTSUPP;
+				goto err_out;
+			}
+		}
 		break;
 	default:
 		erofs_err(inode->i_sb,

@@ -45,6 +45,29 @@ typedef u64 erofs_off_t;
 /* data type for filesystem-wide blocks number */
 typedef u32 erofs_blk_t;
 
+struct erofs_device_info {
+	char *path;
+	struct block_device *bdev;
+	erofs_blk_t blocks;
+	erofs_blk_t uniaddr;
+};
+
+struct erofs_dev_context {
+	struct idr tree;
+	struct rw_semaphore rwsem;
+
+	unsigned int extra_devices;
+	bool flatdev;
+};
+
+struct erofs_map_dev {
+	struct super_block *m_sb;
+	struct erofs_device_info *m_dif;
+	struct block_device *m_bdev;
+	erofs_off_t m_pa;
+	unsigned int m_deviceid;
+};
+
 /* all filesystem-wide lz4 configurations */
 struct erofs_sb_lz4_info {
 	/* # of pages needed for EROFS lz4 rolling decompression */
@@ -54,6 +77,14 @@ struct erofs_sb_lz4_info {
 };
 
 struct erofs_sb_info {
+	struct erofs_device_info dif0;
+	struct erofs_dev_context *devs;
+	struct inode *packed_inode;
+	erofs_nid_t packed_nid;
+	u64 total_blocks;
+	u32 fixed_nsec;
+	s64 epoch;
+	u16 device_id_mask;
 #ifdef CONFIG_EROFS_FS_ZIP
 	/* list for all registered superblocks, mainly for shrinker */
 	struct list_head list;
@@ -214,6 +245,7 @@ static inline int erofs_wait_on_workgroup_freezed(struct erofs_workgroup *grp)
 #define erofs_blknr(addr)       ((addr) / EROFS_BLKSIZ)
 #define erofs_blkoff(addr)      ((addr) % EROFS_BLKSIZ)
 #define blknr_to_addr(nr)       ((erofs_off_t)(nr) * EROFS_BLKSIZ)
+#define erofs_pos(sb, blk)	((erofs_off_t)(blk) << (sb)->s_blocksize_bits)
 
 static inline erofs_off_t iloc(struct erofs_sb_info *sbi, erofs_nid_t nid)
 {
@@ -229,7 +261,16 @@ static inline bool erofs_sb_has_##name(struct erofs_sb_info *sbi) \
 EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
 EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(big_pcluster, incompat, INCOMPAT_BIG_PCLUSTER)
+EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
+EROFS_FEATURE_FUNCS(device_table, incompat, INCOMPAT_DEVICE_TABLE)
+EROFS_FEATURE_FUNCS(compr_head2, incompat, INCOMPAT_COMPR_HEAD2)
+EROFS_FEATURE_FUNCS(ztailpacking, incompat, INCOMPAT_ZTAILPACKING)
+EROFS_FEATURE_FUNCS(fragments, incompat, INCOMPAT_FRAGMENTS)
+EROFS_FEATURE_FUNCS(dedupe, incompat, INCOMPAT_DEDUPE)
+EROFS_FEATURE_FUNCS(xattr_prefixes, incompat, INCOMPAT_XATTR_PREFIXES)
+EROFS_FEATURE_FUNCS(48bit, incompat, INCOMPAT_48BIT)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
+EROFS_FEATURE_FUNCS(mtime, compat, COMPAT_MTIME)
 EROFS_FEATURE_FUNCS(xattr_filter, compat, COMPAT_XATTR_FILTER)
 
 /* atomic flag definitions */
@@ -256,11 +297,18 @@ struct erofs_inode {
 
 	union {
 		erofs_blk_t raw_blkaddr;
+		struct {
+			unsigned short chunkformat;
+			unsigned char  chunkbits;
+		};
 #ifdef CONFIG_EROFS_FS_ZIP
 		struct {
 			unsigned short z_advise;
 			unsigned char  z_algorithmtype[2];
 			unsigned char  z_logical_clusterbits;
+			unsigned short z_idata_size;
+			erofs_off_t    z_fragmentoff;
+			erofs_blk_t    z_tailextent_headlcn;
 		};
 #endif	/* CONFIG_EROFS_FS_ZIP */
 	};
@@ -339,6 +387,7 @@ extern const struct address_space_operations z_erofs_aops;
 enum {
 	BH_Zipped = BH_PrivateStart,
 	BH_FullMapped,
+	BH_Fragment,
 };
 
 /* Has a disk mapping */
@@ -349,6 +398,8 @@ enum {
 #define EROFS_MAP_ZIPPED	(1 << BH_Zipped)
 /* The length of extent is full */
 #define EROFS_MAP_FULL_MAPPED	(1 << BH_FullMapped)
+/* The data is in the fragment packed inode */
+#define EROFS_MAP_FRAGMENT	(1 << BH_Fragment)
 
 enum erofs_kmap_type {
 	EROFS_NO_KMAP,		/* don't map the buffer */
@@ -367,13 +418,16 @@ struct erofs_map_blocks {
 	erofs_off_t m_pa, m_la;
 	u64 m_plen, m_llen;
 
+	unsigned short m_deviceid;
+	char m_algorithmformat;
 	unsigned int m_flags;
 
 	struct erofs_buf buf;
 };
 
-/* Flags used by erofs_map_blocks_flatmode() */
-#define EROFS_GET_BLOCKS_RAW    0x0001
+/* Flags used by erofs_map_blocks_flatmode() and z_erofs_map_blocks_iter() */
+#define EROFS_GET_BLOCKS_RAW		0x0001
+#define EROFS_GET_BLOCKS_FINDTAIL	0x0004
 
 /* zmap.c */
 #ifdef CONFIG_EROFS_FS_ZIP
@@ -397,6 +451,8 @@ void erofs_put_metabuf(struct erofs_buf *buf);
 void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
 			 erofs_blk_t blkaddr, enum erofs_kmap_type type);
 struct page *erofs_get_meta_page(struct super_block *sb, erofs_blk_t blkaddr);
+int erofs_map_dev(struct super_block *sb, struct erofs_map_dev *map);
+int erofs_map_chunks(struct inode *inode, struct erofs_map_blocks *map);
 
 /* inode.c */
 static inline unsigned long erofs_inode_hash(erofs_nid_t nid)
