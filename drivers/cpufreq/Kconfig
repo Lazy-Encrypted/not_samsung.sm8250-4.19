@@ -233,7 +233,7 @@ config CPU_FREQ_SCHEDUTIL_BOUNCING
 
 config CPU_EVENT_BOOST
 	bool "CPU Input Boost"
-	default y
+	default n
 	help
 	  Boosts the CPU on touchscreen and touchpad input, and allows for
 	  boosting on other custom events, mainly which is intended to be for
