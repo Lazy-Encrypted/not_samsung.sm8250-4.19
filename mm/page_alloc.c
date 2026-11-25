@@ -8172,11 +8172,6 @@ static void __setup_per_zone_wmarks(void)
 		zone->watermark_boost = 0;
 		zone->_watermark[WMARK_LOW]  = min_wmark_pages(zone) +
 					low + min;
-#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-		if (ux_page_pool_enable) {
-			zone->_watermark[WMARK_MIN] = zone->_watermark[WMARK_MIN] * 2;
-		}
-#endif
 		zone->_watermark[WMARK_HIGH] = min_wmark_pages(zone) +
 					low + min * 2;
 
