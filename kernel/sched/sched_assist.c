@@ -227,18 +227,46 @@ static const struct file_operations proc_sched_assist_scene_fops = {
 	.llseek = default_llseek,
 };
 
+int sched_assist_scene_sysctl_handler(struct ctl_table *table, int write,
+				      void __user *buffer, size_t *lenp,
+				      loff_t *ppos)
+{
+	int val, err, save_sa;
+	struct ctl_table tmp = *table;
+
+	if (!write)
+		return proc_dointvec(table, write, buffer, lenp, ppos);
+
+	tmp.data = &val;
+	err = proc_dointvec(&tmp, write, buffer, lenp, ppos);
+	if (err)
+		return err;
+
+	save_sa = sysctl_sched_assist_scene;
+	if (val == SA_SCENE_OPT_CLEAR)
+		save_sa = SA_SCENE_OPT_CLEAR;
+	else if (val & SA_SCENE_OPT_SET)
+		save_sa |= (val & ~SA_SCENE_OPT_SET);
+	else
+		save_sa &= ~val;
+
+	sysctl_sched_assist_scene = save_sa;
+	return 0;
+}
+EXPORT_SYMBOL(sched_assist_scene_sysctl_handler);
+
 /* /proc/oplus_scheduler/sched_assist/sched_impt_task */
 static ssize_t proc_sched_impt_task_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	char temp_buf[32];
+	char temp_buf[128];
 	char *temp_str, *token;
-	char in_str[2][16];
+	char in_str[2][32];
 	int cnt, err, pid;
 	static DEFINE_MUTEX(impt_thd_mutex);
 
 	if (count > sizeof(temp_buf) - 1)
-		return -EFAULT;
+		count = sizeof(temp_buf) - 1;
 	if (copy_from_user(temp_buf, buf, count))
 		return -EFAULT;
 
@@ -258,7 +286,7 @@ static ssize_t proc_sched_impt_task_write(struct file *file, const char __user *
 	if (err)
 		return err;
 
-	if (pid < 0 || pid > PID_MAX_DEFAULT)
+	if (pid < 0 || pid > PID_MAX_LIMIT)
 		return -EINVAL;
 
 	mutex_lock(&impt_thd_mutex);
@@ -292,14 +320,14 @@ static const struct file_operations proc_sched_impt_task_fops = {
 static ssize_t proc_im_flag_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	char temp_buf[64];
+	char temp_buf[128];
 	char *temp_str, *token;
-	char in_str[3][20];
+	char in_str[3][32];
 	int cnt = 0, pid = -1, flag = 0, err;
 	struct task_struct *task;
 
 	if (count > sizeof(temp_buf) - 1)
-		return -EFAULT;
+		count = sizeof(temp_buf) - 1;
 	if (copy_from_user(temp_buf, buf, count))
 		return -EFAULT;
 
@@ -323,7 +351,7 @@ static ssize_t proc_im_flag_write(struct file *file, const char __user *buf,
 		return -EINVAL;
 	}
 
-	if (err || pid <= 0 || pid > PID_MAX_DEFAULT)
+	if (err || pid <= 0 || pid > PID_MAX_LIMIT)
 		return -EINVAL;
 
 	global_im_flag_pid = pid;
@@ -339,6 +367,10 @@ static ssize_t proc_im_flag_write(struct file *file, const char __user *buf,
 			task->ux_state |= SA_TYPE_HEAVY;
 		else if (flag == IM_FLAG_SURFACEFLINGER || flag == IM_FLAG_RENDERENGINE)
 			task->ux_state |= SA_TYPE_ANIMATOR;
+		else if (flag == IM_FLAG_NONE) {
+			task->ux_im_flag = 0;
+			task->ux_state &= ~(SA_TYPE_HEAVY | SA_TYPE_ANIMATOR);
+		}
 
 		put_task_struct(task);
 	} else {
@@ -366,24 +398,34 @@ static const struct file_operations proc_im_flag_fops = {
 static ssize_t proc_ux_task_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
-	char temp_buf[32];
+	char temp_buf[128];
 	int pid = -1, state = 0;
+	int ret_scan;
 	struct task_struct *task;
 
 	if (count > sizeof(temp_buf) - 1)
-		return -EFAULT;
+		count = sizeof(temp_buf) - 1;
 	if (copy_from_user(temp_buf, buf, count))
 		return -EFAULT;
 
 	temp_buf[count] = '\0';
-	if (sscanf(temp_buf, "%d %d", &pid, &state) >= 1) {
-		if (pid > 0 && pid <= PID_MAX_DEFAULT) {
+	ret_scan = sscanf(temp_buf, "%d %d", &pid, &state);
+	if (ret_scan >= 1) {
+		if (pid > 0 && pid <= PID_MAX_LIMIT) {
 			rcu_read_lock();
 			task = find_task_by_vpid(pid);
 			if (task) {
 				get_task_struct(task);
 				rcu_read_unlock();
-				task->ux_state = state;
+
+				if (ret_scan == 1 || state == SA_OPT_CLEAR) {
+					task->ux_state = 0;
+				} else if (state & SA_OPT_SET) {
+					task->ux_state |= (state & ~SA_OPT_SET);
+				} else {
+					task->ux_state &= ~state;
+				}
+
 				put_task_struct(task);
 			} else {
 				rcu_read_unlock();
@@ -584,6 +626,39 @@ static struct proc_dir_entry *d_sched_assist_audio;
 static struct proc_dir_entry *d_eas_opt;
 static struct proc_dir_entry *d_eas_opt_iowait;
 static struct proc_dir_entry *d_oplus_binder;
+static struct proc_dir_entry *d_oplus_afs_config;
+
+/* /proc/oplus_afs_config/afs_config */
+static int proc_afs_config_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "enable: 1\n");
+	return 0;
+}
+
+static int proc_afs_config_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_afs_config_show, NULL);
+}
+
+static ssize_t proc_afs_config_write(struct file *file, const char __user *buf,
+				     size_t count, loff_t *ppos)
+{
+	return count;
+}
+
+static const struct file_operations proc_afs_config_fops = {
+	.open = proc_afs_config_open,
+	.read = seq_read,
+	.write = proc_afs_config_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static inline void set_proc_system_user(struct proc_dir_entry *de)
+{
+	if (de)
+		proc_set_user(de, make_kuid(&init_user_ns, 1000), make_kgid(&init_user_ns, 1000));
+}
 
 static int __init oplus_sched_assist_init(void)
 {
@@ -591,55 +666,69 @@ static int __init oplus_sched_assist_init(void)
 	d_oplus_scheduler = proc_mkdir(OPLUS_SCHEDULER_PROC_DIR, NULL);
 	if (!d_oplus_scheduler)
 		pr_err("sched_assist: failed to create proc dir %s\n", OPLUS_SCHEDULER_PROC_DIR);
+	else
+		set_proc_system_user(d_oplus_scheduler);
 
 	d_sched_assist = proc_mkdir(OPLUS_SCHEDASSIST_PROC_DIR, d_oplus_scheduler);
 	if (d_sched_assist) {
-		proc_create("sched_assist_enabled", 0666, d_sched_assist, &proc_sa_enabled_fops);
-		proc_create("sched_assist_scene", 0666, d_sched_assist, &proc_sched_assist_scene_fops);
-		proc_create("sched_impt_task", 0666, d_sched_assist, &proc_sched_impt_task_fops);
-		proc_create("im_flag", 0666, d_sched_assist, &proc_im_flag_fops);
-		proc_create("im_flag_app", 0666, d_sched_assist, &proc_im_flag_fops);
-		proc_create("debug_enabled", 0666, d_sched_assist, &proc_debug_enabled_fops);
-		proc_create("ux_task", 0666, d_sched_assist, &proc_ux_task_fops);
-		proc_create("tpd_cmds", 0666, d_sched_assist, &proc_tpd_cmds_fops);
-		proc_create("tpd_id", 0666, d_sched_assist, &proc_tpd_id_fops);
+		set_proc_system_user(d_sched_assist);
+		set_proc_system_user(proc_create("sched_assist_enabled", 0666, d_sched_assist, &proc_sa_enabled_fops));
+		set_proc_system_user(proc_create("sched_assist_scene", 0666, d_sched_assist, &proc_sched_assist_scene_fops));
+		set_proc_system_user(proc_create("sched_impt_task", 0666, d_sched_assist, &proc_sched_impt_task_fops));
+		set_proc_system_user(proc_create("im_flag", 0666, d_sched_assist, &proc_im_flag_fops));
+		set_proc_system_user(proc_create("im_flag_app", 0666, d_sched_assist, &proc_im_flag_fops));
+		set_proc_system_user(proc_create("debug_enabled", 0666, d_sched_assist, &proc_debug_enabled_fops));
+		set_proc_system_user(proc_create("ux_task", 0666, d_sched_assist, &proc_ux_task_fops));
+		set_proc_system_user(proc_create("tpd_cmds", 0666, d_sched_assist, &proc_tpd_cmds_fops));
+		set_proc_system_user(proc_create("tpd_id", 0666, d_sched_assist, &proc_tpd_id_fops));
 
 		/* /proc/oplus_scheduler/sched_assist/audio/ */
 		d_sched_assist_audio = proc_mkdir("audio", d_sched_assist);
 		if (d_sched_assist_audio) {
-			proc_create("status", 0666, d_sched_assist_audio, &proc_audio_status_fops);
-			proc_create("enable", 0666, d_sched_assist_audio, &proc_audio_enable_fops);
-			proc_create("debug", 0666, d_sched_assist_audio, &proc_audio_debug_fops);
+			set_proc_system_user(d_sched_assist_audio);
+			set_proc_system_user(proc_create("status", 0666, d_sched_assist_audio, &proc_audio_status_fops));
+			set_proc_system_user(proc_create("enable", 0666, d_sched_assist_audio, &proc_audio_enable_fops));
+			set_proc_system_user(proc_create("debug", 0666, d_sched_assist_audio, &proc_audio_debug_fops));
 		}
 	}
 
 	/* /proc/eas_opt/ */
 	d_eas_opt = proc_mkdir("eas_opt", NULL);
 	if (d_eas_opt) {
-		proc_create("eas_opt_enable", 0666, d_eas_opt, &proc_eas_opt_enable_fops);
-		proc_create("group_adjust_enable", 0666, d_eas_opt, &proc_group_adjust_enable_fops);
-		proc_create("fake_cap_multiple", 0666, d_eas_opt, &proc_fake_cap_multiple_fops);
-		proc_create("oplus_cap_multiple", 0666, d_eas_opt, &proc_fake_cap_multiple_fops);
-		proc_create("util_thresh_percent", 0666, d_eas_opt, &proc_util_thresh_percent_fops);
-		proc_create("group_adjust", 0666, d_eas_opt, &proc_group_adjust_fops);
+		set_proc_system_user(d_eas_opt);
+		set_proc_system_user(proc_create("eas_opt_enable", 0666, d_eas_opt, &proc_eas_opt_enable_fops));
+		set_proc_system_user(proc_create("group_adjust_enable", 0666, d_eas_opt, &proc_group_adjust_enable_fops));
+		set_proc_system_user(proc_create("fake_cap_multiple", 0666, d_eas_opt, &proc_fake_cap_multiple_fops));
+		set_proc_system_user(proc_create("oplus_cap_multiple", 0666, d_eas_opt, &proc_fake_cap_multiple_fops));
+		set_proc_system_user(proc_create("util_thresh_percent", 0666, d_eas_opt, &proc_util_thresh_percent_fops));
+		set_proc_system_user(proc_create("group_adjust", 0666, d_eas_opt, &proc_group_adjust_fops));
 
 		/* /proc/eas_opt/iowait_config/ */
 		d_eas_opt_iowait = proc_mkdir("iowait_config", d_eas_opt);
 		if (d_eas_opt_iowait) {
-			proc_create("iowait_apply_ticks", 0666, d_eas_opt_iowait, &proc_iowait_apply_ticks_fops);
-			proc_create("iowait_reset_ticks", 0666, d_eas_opt_iowait, &proc_iowait_reset_ticks_fops);
-			proc_create("oplus_iowait_boost_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_boost_enabled_fops);
-			proc_create("oplus_iowait_skip_min_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_skip_min_enabled_fops);
+			set_proc_system_user(d_eas_opt_iowait);
+			set_proc_system_user(proc_create("iowait_apply_ticks", 0666, d_eas_opt_iowait, &proc_iowait_apply_ticks_fops));
+			set_proc_system_user(proc_create("iowait_reset_ticks", 0666, d_eas_opt_iowait, &proc_iowait_reset_ticks_fops));
+			set_proc_system_user(proc_create("oplus_iowait_boost_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_boost_enabled_fops));
+			set_proc_system_user(proc_create("oplus_iowait_skip_min_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_skip_min_enabled_fops));
 		}
 	}
 
 	/* /proc/oplus_binder/ */
 	d_oplus_binder = proc_mkdir("oplus_binder", NULL);
 	if (d_oplus_binder) {
-		proc_create("async_ux_enable", 0666, d_oplus_binder, &proc_binder_async_ux_enable_fops);
-		proc_create("async_ux", 0666, d_oplus_binder, &proc_binder_async_ux_fops);
-		proc_create("ux_flag", 0666, d_oplus_binder, &proc_binder_ux_flag_fops);
-		proc_create("im_flag", 0666, d_oplus_binder, &proc_im_flag_fops);
+		set_proc_system_user(d_oplus_binder);
+		set_proc_system_user(proc_create("async_ux_enable", 0666, d_oplus_binder, &proc_binder_async_ux_enable_fops));
+		set_proc_system_user(proc_create("async_ux", 0666, d_oplus_binder, &proc_binder_async_ux_fops));
+		set_proc_system_user(proc_create("ux_flag", 0666, d_oplus_binder, &proc_binder_ux_flag_fops));
+		set_proc_system_user(proc_create("im_flag", 0666, d_oplus_binder, &proc_im_flag_fops));
+	}
+
+	/* /proc/oplus_afs_config/ */
+	d_oplus_afs_config = proc_mkdir("oplus_afs_config", NULL);
+	if (d_oplus_afs_config) {
+		set_proc_system_user(d_oplus_afs_config);
+		set_proc_system_user(proc_create("afs_config", 0666, d_oplus_afs_config, &proc_afs_config_fops));
 	}
 
 	/* Core author validation and anti-kanger integrity */

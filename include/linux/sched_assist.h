@@ -63,6 +63,11 @@ extern int sysctl_sched_assist_scene;
 extern int sysctl_oplus_binder_async_ux_enable;
 extern int sysctl_oplus_binder_ux_flag;
 
+struct ctl_table;
+extern int sched_assist_scene_sysctl_handler(struct ctl_table *table, int write,
+					     void __user *buffer, size_t *lenp,
+					     loff_t *ppos);
+
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 bool test_task_ux(struct task_struct *task);
 #else
