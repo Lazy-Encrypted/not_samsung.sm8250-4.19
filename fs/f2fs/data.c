@@ -19,6 +19,7 @@
 #include <linux/uio.h>
 #include <linux/cleancache.h>
 #include <linux/sched/signal.h>
+#include <linux/sched_assist.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -691,6 +692,10 @@ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 		if (!test_opt(sbi, NOBARRIER))
 			io->bio->bi_opf |= REQ_PREFLUSH | REQ_FUA;
 	}
+#if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) || defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	if (test_task_ux(current))
+		io->bio->bi_opf |= REQ_PRIO | REQ_SYNC;
+#endif
 	__submit_merged_bio(io);
 	f2fs_up_write(&io->io_rwsem);
 }
@@ -778,6 +783,11 @@ int f2fs_submit_page_bio(struct f2fs_io_info *fio)
 #ifdef CONFIG_FS_HPB
 	if (is_inode_flag_set(fio->page->mapping->host, FI_HPB_INODE))
 		bio->bi_opf |= REQ_HPB_PREFER;
+#endif
+
+#if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) || defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
+	if (test_task_ux(current))
+		bio->bi_opf |= REQ_PRIO | REQ_SYNC;
 #endif
 
 	__submit_bio(fio->sbi, bio, fio->type);

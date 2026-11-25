@@ -16,6 +16,7 @@
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
 #include <linux/random.h>
+#include <linux/sched_assist.h>
 
 #include "f2fs.h"
 #include "segment.h"
@@ -1722,6 +1723,12 @@ static int issue_discard_thread(void *data)
 			continue;
 		if (kthread_should_stop())
 			return 0;
+#if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (sysctl_sched_assist_scene && sbi->gc_mode != GC_URGENT_HIGH) {
+			wait_ms = dpolicy.max_interval;
+			continue;
+		}
+#endif
 		if (is_sbi_flag_set(sbi, SBI_NEED_FSCK) ||
 			!atomic_read(&dcc->discard_cmd_cnt)) {
 			wait_ms = dpolicy.max_interval;

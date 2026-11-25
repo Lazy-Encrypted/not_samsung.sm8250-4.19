@@ -15,6 +15,7 @@
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
 #include <linux/random.h>
+#include <linux/sched_assist.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -110,6 +111,16 @@ static int gc_thread_func(void *data)
 			stat_other_skip_bggc_count(sbi);
 			goto next;
 		}
+
+#if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (sysctl_sched_assist_scene && sbi->gc_mode != GC_URGENT_HIGH &&
+				sbi->gc_mode != GC_URGENT_MID) {
+			increase_sleep_time(gc_th, &wait_ms);
+			f2fs_up_write(&sbi->gc_lock);
+			stat_other_skip_bggc_count(sbi);
+			goto next;
+		}
+#endif
 
 		if (!is_idle(sbi, GC_TIME)) {
 			increase_sleep_time(gc_th, &wait_ms);
