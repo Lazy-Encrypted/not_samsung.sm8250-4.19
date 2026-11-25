@@ -2904,8 +2904,9 @@ static struct list_head *get_populated_pcp_list(struct zone *zone,
 #if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
 		if (ux_page_pool_enable) {
 			if (is_critical_zeroslowpath_task(current)) {
-				*pg = ux_page_pool_alloc_pages(0, migratetype == get_cma_migrate_type() \
-					? MIGRATE_MOVABLE : migratetype, false);
+				int mt = (migratetype == MIGRATE_UNMOVABLE) ?
+					UX_POOL_MIGRATETYPE_UNMOVABLE : UX_POOL_MIGRATETYPE_MOVABLE;
+				*pg = ux_page_pool_alloc_pages(0, mt, false);
 				if (*pg)
 					return NULL;
 			}
@@ -3528,6 +3529,22 @@ struct page *rmqueue(struct zone *preferred_zone,
 				gfp_flags, migratetype, alloc_flags);
 		goto out;
 	}
+
+#if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (order == 1 && ux_page_pool_enable && is_critical_zeroslowpath_task(current)) {
+		int mt = (migratetype == MIGRATE_UNMOVABLE) ?
+			 UX_POOL_MIGRATETYPE_UNMOVABLE : UX_POOL_MIGRATETYPE_MOVABLE;
+		page = ux_page_pool_alloc_pages(1, mt, false);
+		if (page) {
+			unsigned long pflags;
+			local_irq_save(pflags);
+			__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << 1);
+			zone_statistics(preferred_zone, zone);
+			local_irq_restore(pflags);
+			goto out;
+		}
+	}
+#endif
 
 	/*
 	 * We most definitely don't want callers attempting to

@@ -70,6 +70,7 @@
 #include <asm/cacheflush.h>
 #include "binder_internal.h"
 #include "binder_trace.h"
+#include <linux/sched_assist.h>
 static HLIST_HEAD(binder_deferred_list);
 static DEFINE_MUTEX(binder_deferred_lock);
 static HLIST_HEAD(binder_devices);
@@ -711,6 +712,10 @@ static void binder_restore_priority(struct binder_thread *thread,
 				    const struct binder_priority *desired)
 {
 	binder_do_set_priority(thread, desired, /* verify = */ false);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (thread && thread->task)
+		thread->task->ux_state &= ~SA_TYPE_INHERIT;
+#endif
 }
 
 static void binder_transaction_priority(struct binder_thread *thread,
@@ -723,6 +728,11 @@ static void binder_transaction_priority(struct binder_thread *thread,
 		.sched_policy = node->sched_policy,
 		.prio = node->min_priority,
 	};
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (t->is_ux && task)
+		task->ux_state |= SA_TYPE_INHERIT;
+#endif
 
 	if (t->set_priority_called)
 		return;
@@ -2922,6 +2932,9 @@ static void binder_transaction(struct binder_proc *proc,
 	t->code = tr->code;
 	t->flags = tr->flags;
 	t->is_nested = is_nested;
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	t->is_ux = (sysctl_oplus_binder_async_ux_enable && test_task_ux(current));
+#endif
 	if (!(t->flags & TF_ONE_WAY) &&
 	    binder_supported_policy(current->policy)) {
 		/* Inherit supported policies for synchronous transactions */

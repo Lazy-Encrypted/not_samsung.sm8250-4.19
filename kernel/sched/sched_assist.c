@@ -430,12 +430,159 @@ static const struct file_operations proc_tpd_cmds_fops = {
 	.llseek = default_llseek,
 };
 
+/* OPlus Binder UX interfaces */
+int sysctl_oplus_binder_async_ux_enable = 1;
+EXPORT_SYMBOL(sysctl_oplus_binder_async_ux_enable);
+
+int sysctl_oplus_binder_ux_flag = 1;
+EXPORT_SYMBOL(sysctl_oplus_binder_ux_flag);
+
+static int proc_binder_async_ux_enable_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", sysctl_oplus_binder_async_ux_enable);
+	return 0;
+}
+
+static int proc_binder_async_ux_enable_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_binder_async_ux_enable_show, NULL);
+}
+
+static ssize_t proc_binder_async_ux_enable_write(struct file *file, const char __user *buf,
+						size_t count, loff_t *ppos)
+{
+	char kbuf[32];
+	int val;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+	if (copy_from_user(kbuf, buf, count))
+		return -EFAULT;
+	kbuf[count] = '\0';
+
+	if (kstrtoint(strstrip(kbuf), 10, &val) == 0)
+		sysctl_oplus_binder_async_ux_enable = val;
+
+	return count;
+}
+
+static const struct file_operations proc_binder_async_ux_enable_fops = {
+	.open = proc_binder_async_ux_enable_open,
+	.read = seq_read,
+	.write = proc_binder_async_ux_enable_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int proc_binder_ux_flag_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", sysctl_oplus_binder_ux_flag);
+	return 0;
+}
+
+static int proc_binder_ux_flag_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_binder_ux_flag_show, NULL);
+}
+
+static ssize_t proc_binder_ux_flag_write(struct file *file, const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	char kbuf[64];
+	int tid = 0, flag = 0;
+	struct task_struct *task;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+	if (copy_from_user(kbuf, buf, count))
+		return -EFAULT;
+	kbuf[count] = '\0';
+
+	if (sscanf(kbuf, "%d %d", &tid, &flag) == 2) {
+		rcu_read_lock();
+		task = find_task_by_vpid(tid);
+		if (task) {
+			if (flag)
+				task->ux_state |= SA_TYPE_ONCE_UX;
+			else
+				task->ux_state &= ~SA_TYPE_ONCE_UX;
+		}
+		rcu_read_unlock();
+	} else if (kstrtoint(strstrip(kbuf), 10, &flag) == 0) {
+		sysctl_oplus_binder_ux_flag = flag;
+		if (flag)
+			current->ux_state |= SA_TYPE_ONCE_UX;
+		else
+			current->ux_state &= ~SA_TYPE_ONCE_UX;
+	}
+
+	return count;
+}
+
+static const struct file_operations proc_binder_ux_flag_fops = {
+	.open = proc_binder_ux_flag_open,
+	.read = seq_read,
+	.write = proc_binder_ux_flag_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int proc_binder_async_ux_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", sysctl_oplus_binder_async_ux_enable);
+	return 0;
+}
+
+static int proc_binder_async_ux_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_binder_async_ux_show, NULL);
+}
+
+static ssize_t proc_binder_async_ux_write(struct file *file, const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	char kbuf[64];
+	int tid = 0, val = 0;
+	struct task_struct *task;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+	if (copy_from_user(kbuf, buf, count))
+		return -EFAULT;
+	kbuf[count] = '\0';
+
+	if (sscanf(kbuf, "%d %d", &tid, &val) == 2) {
+		rcu_read_lock();
+		task = find_task_by_vpid(tid);
+		if (task) {
+			if (val)
+				task->ux_state |= SA_TYPE_HEAVY;
+			else
+				task->ux_state &= ~SA_TYPE_HEAVY;
+		}
+		rcu_read_unlock();
+	} else if (kstrtoint(strstrip(kbuf), 10, &val) == 0) {
+		sysctl_oplus_binder_async_ux_enable = val;
+	}
+
+	return count;
+}
+
+static const struct file_operations proc_binder_async_ux_fops = {
+	.open = proc_binder_async_ux_open,
+	.read = seq_read,
+	.write = proc_binder_async_ux_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 /* Initialization */
 static struct proc_dir_entry *d_oplus_scheduler;
 static struct proc_dir_entry *d_sched_assist;
 static struct proc_dir_entry *d_sched_assist_audio;
 static struct proc_dir_entry *d_eas_opt;
 static struct proc_dir_entry *d_eas_opt_iowait;
+static struct proc_dir_entry *d_oplus_binder;
 
 static int __init oplus_sched_assist_init(void)
 {
@@ -483,6 +630,15 @@ static int __init oplus_sched_assist_init(void)
 			proc_create("oplus_iowait_boost_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_boost_enabled_fops);
 			proc_create("oplus_iowait_skip_min_enabled", 0666, d_eas_opt_iowait, &proc_oplus_iowait_skip_min_enabled_fops);
 		}
+	}
+
+	/* /proc/oplus_binder/ */
+	d_oplus_binder = proc_mkdir("oplus_binder", NULL);
+	if (d_oplus_binder) {
+		proc_create("async_ux_enable", 0666, d_oplus_binder, &proc_binder_async_ux_enable_fops);
+		proc_create("async_ux", 0666, d_oplus_binder, &proc_binder_async_ux_fops);
+		proc_create("ux_flag", 0666, d_oplus_binder, &proc_binder_ux_flag_fops);
+		proc_create("im_flag", 0666, d_oplus_binder, &proc_im_flag_fops);
 	}
 
 	pr_info("sched_assist: proc interfaces registered successfully\n");

@@ -60,6 +60,8 @@ enum IM_FLAG_TYPE {
 
 extern int sysctl_sched_assist_enabled;
 extern int sysctl_sched_assist_scene;
+extern int sysctl_oplus_binder_async_ux_enable;
+extern int sysctl_oplus_binder_ux_flag;
 
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 bool test_task_ux(struct task_struct *task);
