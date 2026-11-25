@@ -13,6 +13,7 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/sched_assist.h>
+#include <linux/tachyon.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/mutex.h>
@@ -640,6 +641,11 @@ static int __init oplus_sched_assist_init(void)
 		proc_create("ux_flag", 0666, d_oplus_binder, &proc_binder_ux_flag_fops);
 		proc_create("im_flag", 0666, d_oplus_binder, &proc_im_flag_fops);
 	}
+
+	/* Core author validation and anti-kanger integrity */
+	BUILD_BUG_ON_MSG(!TACHYON_AUTHOR, "Tachyon Kernel: author signature missing");
+	if (tachyon_validate_integrity() != TACHYON_MAGIC)
+		panic("Tachyon Kernel: author verification failed\n");
 
 	pr_info("sched_assist: proc interfaces registered successfully\n");
 	return 0;

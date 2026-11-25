@@ -79,12 +79,12 @@ jobs:
            | KernelSU: yes
            | SELinux: Enforcing" >> buildDetails.txt
           buildDetails="`cat buildDetails.txt`"
-          msg="*not\\-kernel* $BUILD for the *${DEVICE_NAME_ESCAPED} \\(${DEVICE_ESCAPED}\\)*
+          msg="*Tachyon Kernel* $BUILD for the *${DEVICE_NAME_ESCAPED} \\(${DEVICE_ESCAPED}\\)*
           * *
           \`\`\`
           $buildDetails
           \`\`\`
-          *@not\\_kernel \\| @sKernelSU*
+          *@noxydevelopment \\| @sKernelSU*
           * * "
           file="$zip_file"
           curl -s -F document=@$file "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
