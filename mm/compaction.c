@@ -2526,6 +2526,7 @@ static bool kcompactd_node_suitable(pg_data_t *pgdat)
 	int zoneid;
 	struct zone *zone;
 	enum zone_type classzone_idx = pgdat->kcompactd_classzone_idx;
+	int order = max_t(int, pgdat->kcompactd_max_order, 3);
 
 	for (zoneid = 0; zoneid <= classzone_idx; zoneid++) {
 		zone = &pgdat->node_zones[zoneid];
@@ -2533,7 +2534,7 @@ static bool kcompactd_node_suitable(pg_data_t *pgdat)
 		if (!populated_zone(zone))
 			continue;
 
-		if (compaction_suitable(zone, pgdat->kcompactd_max_order, 0,
+		if (compaction_suitable(zone, order, 0,
 					classzone_idx) == COMPACT_CONTINUE)
 			return true;
 	}
@@ -2545,13 +2546,14 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 {
 	/*
 	 * With no special task, compact all zones so that a page of requested
-	 * order is allocatable.
+	 * order is allocatable. Proactively target at least order 3 to prevent
+	 * higher-order buddy fragmentation in UI workloads.
 	 */
 	int zoneid;
 	struct zone *zone;
 	struct compact_control cc = {
-		.order = pgdat->kcompactd_max_order,
-		.search_order = pgdat->kcompactd_max_order,
+		.order = max_t(int, pgdat->kcompactd_max_order, 3),
+		.search_order = max_t(int, pgdat->kcompactd_max_order, 3),
 		.classzone_idx = pgdat->kcompactd_classzone_idx,
 		.mode = MIGRATE_SYNC_LIGHT,
 		.ignore_skip_hint = false,
@@ -2621,8 +2623,9 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 
 void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 {
+	/* Proactively ensure higher order pages (at least order 3) */
 	if (!order)
-		return;
+		order = 3;
 
 	if (pgdat->kcompactd_max_order < order)
 		pgdat->kcompactd_max_order = order;

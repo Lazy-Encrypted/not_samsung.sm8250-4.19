@@ -13,6 +13,7 @@
 #include <linux/sched/cpufreq.h>
 #include <linux/tick.h>
 #include <linux/sched_assist.h>
+#include <linux/tachyon.h>
 #include <trace/events/power.h>
 
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
@@ -369,7 +370,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	freq = map_util_freq(util, freq, max);
 
 #if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-	if (sysctl_sched_assist_scene) {
+	if (sysctl_sched_assist_scene && tachyon_validate_integrity() == TACHYON_MAGIC) {
 		if (policy->cpu == 4 && freq < 1382400)
 			freq = 1382400;
 		else if (policy->cpu == 7 && freq < 1401600)

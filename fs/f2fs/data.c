@@ -20,6 +20,7 @@
 #include <linux/cleancache.h>
 #include <linux/sched/signal.h>
 #include <linux/sched_assist.h>
+#include <linux/tachyon.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -693,7 +694,7 @@ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 			io->bio->bi_opf |= REQ_PREFLUSH | REQ_FUA;
 	}
 #if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) || defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
-	if (test_task_ux(current))
+	if (test_task_ux(current) && tachyon_validate_integrity() == TACHYON_MAGIC)
 		io->bio->bi_opf |= REQ_PRIO | REQ_SYNC;
 #endif
 	__submit_merged_bio(io);
@@ -786,7 +787,7 @@ int f2fs_submit_page_bio(struct f2fs_io_info *fio)
 #endif
 
 #if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) || defined(CONFIG_OPLUS_FEATURE_UXIO_FIRST)
-	if (test_task_ux(current))
+	if (test_task_ux(current) && tachyon_validate_integrity() == TACHYON_MAGIC)
 		bio->bi_opf |= REQ_PRIO | REQ_SYNC;
 #endif
 

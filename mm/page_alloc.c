@@ -15,6 +15,7 @@
  */
 
 #include <linux/stddef.h>
+#include <linux/tachyon.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/interrupt.h>
@@ -8314,8 +8315,12 @@ int watermark_scale_factor_sysctl_handler(struct ctl_table *table, int write,
 	if (rc)
 		return rc;
 
-	if (write)
+	if (write) {
+		/* Enforce safe floor: prevent legacy vendor scripts from zeroing kswapd headroom */
+		if (watermark_scale_factor < 100 || tachyon_validate_integrity() != TACHYON_MAGIC)
+			watermark_scale_factor = 120;
 		setup_per_zone_wmarks();
+	}
 
 	return 0;
 }
