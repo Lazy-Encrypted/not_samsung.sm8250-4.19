@@ -33,11 +33,13 @@ struct ux_page_pool {
 
 #ifdef CONFIG_OPLUS_UXMEM_OPT
 extern int ux_page_pool_enable;
+void ux_page_pool_free_prepared(struct page *page, unsigned int order);
 struct page *ux_page_pool_alloc_pages(unsigned int order, int migratetype, bool may_retry);
 int ux_page_pool_refill(struct page *page, unsigned int order, int migratetype);
 bool is_critical_zeroslowpath_task(struct task_struct *tsk);
 bool free_unref_page_prepare2(struct page *page, unsigned int order, unsigned long pfn);
 #else
+static inline void ux_page_pool_free_prepared(struct page *page, unsigned int order) { }
 static inline struct page *ux_page_pool_alloc_pages(unsigned int order, int migratetype, bool may_retry) { return NULL; }
 static inline int ux_page_pool_refill(struct page *page, unsigned int order, int migratetype) { return 0; }
 static inline bool is_critical_zeroslowpath_task(struct task_struct *tsk) { return false; }
