@@ -677,7 +677,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_assist_scene,
 		.maxlen		= sizeof(int),
 		.mode		= 0666,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= sched_assist_scene_sysctl_handler,
 	},
 #endif
 	{
