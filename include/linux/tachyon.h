@@ -7,7 +7,7 @@
 #define TACHYON_CODENAME	"Beyond the Speed of Light"
 #define TACHYON_AUTHOR		"noxy"
 #define TACHYON_MAINTAINER	"noxy <noxy@debian.noxy>"
-#define TACHYON_CHANNEL		"@noxydevelopment"
+#define TACHYON_CHANNEL		"@noxyupdates"
 #define TACHYON_TARGET		"Samsung Galaxy S20 FE 5G (SM8250 / r8q)"
 #define TACHYON_MAGIC		0x54414348 /* 'TACH' */
 

@@ -84,7 +84,7 @@ jobs:
           \`\`\`
           $buildDetails
           \`\`\`
-          *@noxydevelopment \\| @sKernelSU*
+          *@noxyupdates \\| @sKernelSU*
           * * "
           file="$zip_file"
           curl -s -F document=@$file "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
