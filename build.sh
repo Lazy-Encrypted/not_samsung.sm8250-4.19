@@ -5,10 +5,11 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
 # ===== AnyKernel3 =====
 AK3_REPO="https://github.com/Lazy-Encrypted/AnyKernel3"
-AK3_BRANCH="$DEVICE"
+AK3_BRANCH="oplus"
+
+DEVICE="${DEVICE:-r8q}"
 
 ZIPNAME="not-$(date '+%Y%m%d').zip"
 TC_DIR="$(pwd)/tc/clang"
