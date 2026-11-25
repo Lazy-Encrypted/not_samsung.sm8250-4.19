@@ -2534,6 +2534,15 @@ static bool kcompactd_node_suitable(pg_data_t *pgdat)
 		if (!populated_zone(zone))
 			continue;
 
+		/* Proactively compact if higher order blocks (orders 3..5) are depleted */
+		if (zone_page_state(zone, NR_FREE_PAGES) > min_wmark_pages(zone)) {
+			int o;
+			for (o = 3; o <= 5; o++) {
+				if (!zone->free_area[o].nr_free)
+					return true;
+			}
+		}
+
 		if (compaction_suitable(zone, order, 0,
 					classzone_idx) == COMPACT_CONTINUE)
 			return true;
@@ -2556,7 +2565,7 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 		.search_order = max_t(int, pgdat->kcompactd_max_order, 3),
 		.classzone_idx = pgdat->kcompactd_classzone_idx,
 		.mode = MIGRATE_SYNC_LIGHT,
-		.ignore_skip_hint = false,
+		.ignore_skip_hint = true,
 		.gfp_mask = GFP_KERNEL,
 	};
 	trace_mm_compaction_kcompactd_wake(pgdat->node_id, cc.order,
