@@ -8467,7 +8467,7 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 }
 #endif
 
-select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+static int select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 	struct sched_domain *tmp, *sd = NULL;
