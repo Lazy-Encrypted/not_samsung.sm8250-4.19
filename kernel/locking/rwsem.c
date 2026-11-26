@@ -327,14 +327,16 @@ static inline bool rwsem_list_add_per_prio(struct rwsem_waiter *waiter_in,
 
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 	if (test_task_ux(waiter_in->task)) {
-		struct task_struct *owner;
+		unsigned long owner_raw;
 
 		rcu_read_lock();
-		owner = rwsem_owner(sem);
-		if (owner && owner != waiter_in->task &&
-		    !(atomic_long_read(&sem->owner) & 1UL) &&
-		    !test_task_ux(owner))
-			dynamic_ux_enqueue(owner, INHERIT_UX_RWSEM, waiter_in->task->ux_depth);
+		owner_raw = atomic_long_read(&sem->owner);
+		if (owner_raw && !(owner_raw & 7UL)) {
+			struct task_struct *owner = (struct task_struct *)owner_raw;
+
+			if (owner != waiter_in->task && !test_task_ux(owner))
+				dynamic_ux_enqueue(owner, INHERIT_UX_RWSEM, waiter_in->task->ux_depth);
+		}
 		rcu_read_unlock();
 
 		if (sem->m_count < RWSEM_MAX_PREEMPT_ALLOWED) {
