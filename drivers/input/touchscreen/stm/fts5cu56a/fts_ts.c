@@ -114,6 +114,8 @@ static int fts_panel_state_notifier(struct notifier_block *nb,
         break;
     case PANEL_OFF:
     case PANEL_LPM:
+        if (info->fix_active_mode)
+        	fts_fix_active_mode(info, false);
         fts_set_lowpowermode(info, TO_LOWPOWER_MODE);
         break;
     default:
@@ -946,6 +948,16 @@ void fts_change_scan_rate(struct fts_ts_info *info, u8 rate)
 	ret = fts_write_reg(info, &regAdd[0], 2);
 
 	input_dbg(true, &info->client->dev, "%s: scan rate (%d Hz), ret = %d\n", __func__, regAdd[1], ret);
+}
+
+static void fts_apply_low_latency_mode(struct fts_ts_info *info)
+{
+	u8 regAdd[3] = { FTS_CMD_SET_FUNCTION_ONOFF, FTS_FUNCTION_SET_GAME_MODE, 1 };
+
+	fts_change_scan_rate(info, 240);
+	fts_write_reg(info, regAdd, 3);
+	info->fix_active_mode = true;
+	fts_fix_active_mode(info, true);
 }
 
 void fts_interrupt_set(struct fts_ts_info *info, int enable)
@@ -1939,7 +1951,7 @@ static u8 fts_event_handler_type_b(struct fts_ts_info *info)
 					}
 
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-					input_info(true, &info->client->dev,
+					input_dbg(false, &info->client->dev,
 							"[R] tID:%d loc:%s dd:%d,%d mc:%d tc:%d lx:%d ly:%d mx:%d my:%d p:%d nlvl:%d maxS:%d hid:%d\n",
 							TouchID, location,
 							info->finger[TouchID].x - info->finger[TouchID].p_x,
@@ -1950,7 +1962,7 @@ static u8 fts_event_handler_type_b(struct fts_ts_info *info)
 							info->finger[TouchID].palm_count, info->finger[TouchID].noise_level,
 							info->finger[TouchID].max_strength, info->finger[TouchID].hover_id_num);
 #else
-					input_info(true, &info->client->dev,
+					input_dbg(false, &info->client->dev,
 							"[R] tID:%d loc:%s dd:%d,%d mp:%d,%d mc:%d tc:%d p:%d nlvl:%d maxS:%d hid:%d\n",
 							TouchID, location,
 							info->finger[TouchID].x - info->finger[TouchID].p_x,
@@ -2010,7 +2022,7 @@ static u8 fts_event_handler_type_b(struct fts_ts_info *info)
 					}
 
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-					input_info(true, &info->client->dev,
+					input_dbg(false, &info->client->dev,
 							"[P] tID:%d.%d x:%d y:%d z:%d major:%d minor:%d loc:%s tc:%d type:%d p:%d nlvl:%d maxS:%d hid:%d\n",
 							TouchID, (info->input_dev->mt->trkid - 1) & TRKID_MAX,
 							info->finger[TouchID].x, info->finger[TouchID].y,
@@ -2020,7 +2032,7 @@ static u8 fts_event_handler_type_b(struct fts_ts_info *info)
 							info->finger[TouchID].palm_count, info->finger[TouchID].noise_level,
 							info->finger[TouchID].max_strength, info->finger[TouchID].hover_id_num);
 #else
-					input_info(true, &info->client->dev,
+					input_dbg(false, &info->client->dev,
 							"[P] tID:%d.%d z:%d major:%d minor:%d loc:%s tc:%d type:%d p:%d nlvl:%d maxS:%d hid:%d\n",
 							TouchID, (info->input_dev->mt->trkid - 1) & TRKID_MAX,
 							info->finger[TouchID].z,
@@ -3482,6 +3494,7 @@ static int fts_input_open(struct input_dev *dev)
 	}
 
 	info->fts_power_state = FTS_POWER_STATE_ACTIVE;
+	fts_apply_low_latency_mode(info);
 	fts_set_hsync_scanmode(info, FTS_CMD_NPM_SYNC_SCAN);
 
 	if (info->fix_active_mode)
@@ -3688,7 +3701,11 @@ void fts_reinit(struct fts_ts_info *info, bool delay)
 
 	fts_set_fod_rect(info);
 
-	fts_change_scan_rate(info, 120);
+	fts_change_scan_rate(info, 240);
+	regAdd[0] = FTS_CMD_SET_FUNCTION_ONOFF;
+	regAdd[1] = FTS_FUNCTION_SET_GAME_MODE;
+	regAdd[2] = 1;
+	fts_write_reg(info, regAdd, 3);
 
 	if (info->brush_mode) {
 		u8 regAdd[3] = {FTS_CMD_SET_FUNCTION_ONOFF, FTS_FUNCTION_ENABLE_BRUSH_MODE, info->brush_mode};
@@ -3973,6 +3990,8 @@ static void fts_reset_work(struct work_struct *work)
 		} else {
 			fts_stop_device(info);
 		}
+	} else {
+		fts_apply_low_latency_mode(info);
 	}
 	fts_set_press_property(info);
 	fts_set_fod_finger_merge(info);
@@ -4124,6 +4143,8 @@ void fts_chk_tsp_ic_status(struct fts_ts_info *info, int call_pos)
 				input_info(true, &info->client->dev, "%s: SYSFS: TSP IC OFF => LP mode[0x%X]\n",
 								__func__, info->lowpower_flag);
 				fts_start_device(info);
+				if (info->fix_active_mode)
+					fts_fix_active_mode(info, false);
 				fts_set_lowpowermode(info, TO_LOWPOWER_MODE);
 
 			} else if (info->fts_power_state == FTS_POWER_STATE_LOWPOWER && info->lowpower_flag == 0) {
@@ -4410,6 +4431,8 @@ static int fts_suspend(struct i2c_client *client, pm_message_t mesg)
 	input_dbg(true, &info->client->dev, "%s\n", __func__);
 
 	if (info->lowpower_flag) {
+		if (info->fix_active_mode)
+			fts_fix_active_mode(info, false);
 		fts_set_lowpowermode(info, TO_LOWPOWER_MODE);
 	} else {
 		fts_stop_device(info);
