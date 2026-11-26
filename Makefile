@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0
-VERSION = 4
-PATCHLEVEL = 19
-SUBLEVEL = 325
+VERSION = 5
+PATCHLEVEL = 10
+SUBLEVEL = 241
 EXTRAVERSION =
 NAME = "People's Front"
 
+# The kernel is NOT 5.10, this is just to match Uname BPF and preparing for newers android versions.
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
 # More info can be located in ./README
