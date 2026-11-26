@@ -33,6 +33,9 @@
 #include <linux/mm_inline.h>
 #include <linux/backing-dev.h>
 #include <linux/rmap.h>
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 #include <linux/topology.h>
 #include <linux/cpu.h>
 #include <linux/cpuset.h>
@@ -740,6 +743,11 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 
 	if (task_is_critical())
 		return 0;
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (priority > DEF_PRIORITY - 4 && test_task_ux(current))
+		return 0;
+#endif
 
 	/*
 	 * The root memcg might be allocated even though memcg is disabled

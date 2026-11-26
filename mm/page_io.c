@@ -26,6 +26,9 @@
 #include <linux/uio.h>
 #include <linux/sched/task.h>
 #include <linux/pgtable.h>
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 
 static struct bio *get_swap_bio(gfp_t gfp_flags,
 				struct page *page, bio_end_io_t end_io)
@@ -358,6 +361,11 @@ int swap_readpage(struct page *page, bool synchronous)
 	get_task_struct(current);
 	bio->bi_private = current;
 	bio_set_op_attrs(bio, REQ_OP_READ, 0);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (test_task_ux(current) ||
+	    (sysctl_sched_assist_scene & (SA_LAUNCH | SA_ANIM)))
+		bio->bi_opf |= REQ_PRIO;
+#endif
 	count_vm_event(PSWPIN);
 	bio_get(bio);
 	qc = submit_bio(bio);
