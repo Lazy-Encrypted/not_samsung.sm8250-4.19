@@ -2833,7 +2833,8 @@ static int zram_add(void)
 	if (ZRAM_LOGICAL_BLOCK_SIZE == PAGE_SIZE)
 		blk_queue_max_write_zeroes_sectors(zram->disk->queue, UINT_MAX);
 
-	zram->disk->queue->backing_dev_info->capabilities |= BDI_CAP_STABLE_WRITES;
+	zram->disk->queue->backing_dev_info->capabilities |=
+		BDI_CAP_STABLE_WRITES | BDI_CAP_SYNCHRONOUS_IO;
 	device_add_disk(NULL, zram->disk, zram_disk_groups);
 
 	zram_debugfs_register(zram);
