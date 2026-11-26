@@ -18,6 +18,9 @@
 #include <soc/qcom/qtee_shmbridge.h>
 #include <linux/of_platform.h>
 #include "governor.h"
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 
 static DEFINE_SPINLOCK(tz_lock);
 static DEFINE_SPINLOCK(sample_lock);
@@ -706,6 +709,18 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		level = max(level, 0);
 		level = min_t(int, level, devfreq->profile->max_state - 1);
 	}
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (sysctl_sched_assist_enabled &&
+	    (sysctl_sched_assist_scene &
+	     (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE | SA_GPU_COMPOSITION)) &&
+	    devfreq->profile->max_state > 3) {
+		int ux_max_level = devfreq->profile->max_state - 3;
+
+		if (level > ux_max_level)
+			level = ux_max_level;
+	}
+#endif
 
 	*freq = devfreq->profile->freq_table[level];
 	return 0;
