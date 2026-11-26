@@ -45,6 +45,9 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/compat.h>
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 #include <linux/slab.h>
 #include <linux/poll.h>
 #include <linux/fs.h>
@@ -2382,6 +2385,10 @@ static inline void __queue_me(struct futex_q *q, struct futex_hash_bucket *hb)
 	 * the others are woken last, in FIFO order.
 	 */
 	prio = min(current->normal_prio, MAX_RT_PRIO);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (prio == MAX_RT_PRIO && !test_task_ux(current))
+		prio = MAX_RT_PRIO + 1;
+#endif
 
 	plist_node_init(&q->list, prio);
 	plist_add(&q->list, &hb->chain);
