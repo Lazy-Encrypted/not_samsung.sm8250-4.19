@@ -4,6 +4,9 @@
  *             https://www.huawei.com/
  */
 #include "zdata.h"
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 #include "compress.h"
 #include <linux/prefetch.h>
 #include <linux/cpuhotplug.h>
@@ -1567,6 +1570,10 @@ static void z_erofs_submit_queue(struct super_block *sb,
 
 			if (bio && cur != last_index + 1) {
 submit_bio_retry:
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+				if (test_task_ux(current) || (sysctl_sched_assist_scene & SA_LAUNCH))
+					bio->bi_opf |= REQ_PRIO;
+#endif
 				submit_bio(bio);
 				bio = NULL;
 			}
@@ -1598,8 +1605,13 @@ submit_bio_retry:
 			move_to_bypass_jobqueue(pcl, qtail, owned_head);
 	} while (owned_head != Z_EROFS_PCLUSTER_TAIL);
 
-	if (bio)
+	if (bio) {
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+		if (test_task_ux(current) || (sysctl_sched_assist_scene & SA_LAUNCH))
+			bio->bi_opf |= REQ_PRIO;
+#endif
 		submit_bio(bio);
+	}
 
 	/*
 	 * although background is preferred, no one is pending for submission.
@@ -1722,6 +1734,11 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 
 	bool sync = (sbi->readahead_sync_decompress &&
 			nr_pages <= sbi->max_sync_decompress_pages);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (!sync && nr_pages <= 16 &&
+	    (test_task_ux(current) || (sysctl_sched_assist_scene & SA_LAUNCH)))
+		sync = true;
+#endif
 	struct z_erofs_decompress_frontend f = DECOMPRESS_FRONTEND_INIT(inode);
 	gfp_t gfp = mapping_gfp_constraint(mapping, GFP_KERNEL);
 	struct page *head = NULL;
