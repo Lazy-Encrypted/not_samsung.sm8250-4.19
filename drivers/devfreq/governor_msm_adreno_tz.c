@@ -18,34 +18,8 @@
 #include <soc/qcom/qtee_shmbridge.h>
 #include <linux/of_platform.h>
 #include "governor.h"
-#include <linux/jiffies.h>
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 #include <linux/sched_assist.h>
-
-static unsigned long ux_gpu_hold_until;
-
-static bool tz_ux_blur_active(void)
-{
-	unsigned long hold;
-
-	if (!sysctl_sched_assist_enabled)
-		return false;
-
-	if (sysctl_sched_assist_scene &
-	    (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE | SA_GPU_COMPOSITION)) {
-		WRITE_ONCE(ux_gpu_hold_until, jiffies + msecs_to_jiffies(250));
-		return true;
-	}
-
-	hold = READ_ONCE(ux_gpu_hold_until);
-	if (!hold)
-		return false;
-	if (time_after_eq(jiffies, hold)) {
-		WRITE_ONCE(ux_gpu_hold_until, 0);
-		return false;
-	}
-	return true;
-}
 #endif
 
 static DEFINE_SPINLOCK(tz_lock);
@@ -644,9 +618,6 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	int val, level = 0;
 	unsigned int scm_data[4];
 	int context_count = 0;
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	bool ux_active;
-#endif
 
 	if (!priv)
 		return -EINVAL;
@@ -673,20 +644,9 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	 * has passed since the last run or the gpu hasn't been
 	 * busier than MIN_BUSY.
 	 */
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	ux_active = tz_ux_blur_active();
-#endif
 	if ((stats->total_time == 0) ||
 		(priv->bin.total_time < FLOOR) ||
 		(unsigned int) priv->bin.busy_time < MIN_BUSY) {
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-		if (ux_active && devfreq->profile->max_state > 2) {
-			unsigned long floor_freq = devfreq->profile->freq_table[1];
-
-			if (*freq < floor_freq)
-				*freq = floor_freq;
-		}
-#endif
 		return 0;
 	}
 
@@ -733,7 +693,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		 */
 		if (refresh_rate > 60 && level > 0 &&
 		    priv->bin.total_time &&
-		    (u64)priv->bin.busy_time * 3 >= priv->bin.total_time &&
+		    (u64)priv->bin.busy_time * 2 >= priv->bin.total_time &&
 		    val == 0)
 			val = -1;
 	}
@@ -751,8 +711,15 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	}
 
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (ux_active && devfreq->profile->max_state > 2 && level > 1)
-		level = 1;
+	if (sysctl_sched_assist_enabled &&
+	    (sysctl_sched_assist_scene &
+	     (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE | SA_GPU_COMPOSITION)) &&
+	    devfreq->profile->max_state > 3) {
+		int ux_max_level = devfreq->profile->max_state - 3;
+
+		if (level > ux_max_level)
+			level = ux_max_level;
+	}
 #endif
 
 	*freq = devfreq->profile->freq_table[level];
