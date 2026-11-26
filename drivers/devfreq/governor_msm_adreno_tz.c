@@ -31,7 +31,7 @@ static DEFINE_SPINLOCK(suspend_lock);
 /*
  * MIN_BUSY is 1 msec for the sample to be sent
  */
-#define MIN_BUSY		500
+#define MIN_BUSY		400
 #define MAX_TZ_VERSION		0
 
 /*
