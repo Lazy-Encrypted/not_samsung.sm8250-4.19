@@ -744,6 +744,12 @@ static void binder_transaction_priority(struct binder_thread *thread,
 		desired.sched_policy = SCHED_NORMAL;
 	}
 
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (t->is_ux && !is_rt_policy(desired.sched_policy) &&
+	    desired.prio > NICE_TO_PRIO(-4))
+		desired.prio = NICE_TO_PRIO(-4);
+#endif
+
 	if (node_prio.prio < desired.prio ||
 	    (node_prio.prio == desired.prio &&
 	     node_prio.sched_policy == SCHED_FIFO)) {
@@ -2933,7 +2939,8 @@ static void binder_transaction(struct binder_proc *proc,
 	t->flags = tr->flags;
 	t->is_nested = is_nested;
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	t->is_ux = (sysctl_oplus_binder_async_ux_enable && test_task_ux(current));
+	t->is_ux = test_task_ux(current) &&
+		   (!(t->flags & TF_ONE_WAY) || sysctl_oplus_binder_async_ux_enable);
 #endif
 	if (!(t->flags & TF_ONE_WAY) &&
 	    binder_supported_policy(current->policy)) {
