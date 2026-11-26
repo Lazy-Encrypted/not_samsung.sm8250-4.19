@@ -77,6 +77,9 @@
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
 #include "internal.h"
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 #if defined(CONFIG_OPLUS_UXMEM_OPT)
 #include "ux_page_pool.h"
 #endif
@@ -4584,6 +4587,11 @@ gfp_to_alloc_flags(gfp_t gfp_mask)
 		alloc_flags &= ~ALLOC_CPUSET;
 	} else if (unlikely(rt_task(current)) && !in_interrupt())
 		alloc_flags |= ALLOC_HARDER;
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	else if (unlikely(test_task_ux(current)) && !in_interrupt() &&
+		 !(gfp_mask & __GFP_NOMEMALLOC))
+		alloc_flags |= ALLOC_HIGH;
+#endif
 
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
 		alloc_flags |= ALLOC_KSWAPD;
