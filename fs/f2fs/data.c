@@ -1105,6 +1105,11 @@ static struct bio *f2fs_grab_read_bio(struct inode *inode, block_t blkaddr,
 	bio = bio_alloc_bioset(for_write ? GFP_NOIO : GFP_KERNEL,
 			       min_t(int, nr_pages, BIO_MAX_PAGES),
 			       &f2fs_bioset);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (test_task_ux(current) ||
+	    (sysctl_sched_assist_scene & (SA_LAUNCH | SA_ANIM)))
+		op_flag |= REQ_PRIO;
+#endif
 	bio_set_dev(bio, bdev);
 	bio_set_op_attrs(bio, REQ_OP_READ, op_flag);
 	if (!bio)
