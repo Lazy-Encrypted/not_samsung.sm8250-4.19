@@ -22,6 +22,9 @@
  */
 #include <linux/rbtree_augmented.h>
 #include "sched.h"
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 
 #include <trace/events/sched.h>
 
@@ -8423,6 +8426,48 @@ eas_not_ready:
  * preempt must be disabled.
  */
 static int
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
+{
+	unsigned long little_cap = capacity_orig_of(0);
+	int best_idle = -1;
+	int best_busy = -1;
+	unsigned int min_nr = UINT_MAX;
+	int i;
+
+	if (cpu_active(prev_cpu) &&
+	    cpumask_test_cpu(prev_cpu, &p->cpus_allowed) &&
+	    capacity_orig_of(prev_cpu) > little_cap &&
+	    idle_cpu(prev_cpu))
+		return prev_cpu;
+
+	for_each_cpu_and(i, cpu_active_mask, &p->cpus_allowed) {
+		if (capacity_orig_of(i) <= little_cap)
+			continue;
+
+		if (idle_cpu(i)) {
+			if (best_idle < 0 ||
+			    capacity_orig_of(i) > capacity_orig_of(best_idle))
+				best_idle = i;
+		} else if (best_idle < 0) {
+			unsigned int nr = cpu_rq(i)->nr_running;
+			if (nr < min_nr) {
+				min_nr = nr;
+				best_busy = i;
+			}
+		}
+	}
+
+	if (best_idle >= 0)
+		return best_idle;
+
+	if (best_busy >= 0 && min_nr <= 2)
+		return best_busy;
+
+	return -1;
+}
+#endif
+
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
@@ -8435,6 +8480,15 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 
 	if (wake_flags & WF_TTWU) {
 		record_wakee(p);
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+		if (unlikely(test_task_ux(p))) {
+			new_cpu = oplus_select_ux_cpu(p, prev_cpu);
+			if (new_cpu >= 0)
+				return new_cpu;
+			new_cpu = prev_cpu;
+		}
+#endif
 
                 if (sched_energy_enabled()) {
 			new_cpu = find_energy_efficient_cpu(p, prev_cpu, sync, 1);
@@ -8715,6 +8769,11 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	 */
 	if (pse->sched_delayed)
 		goto update;
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (unlikely(test_task_ux(p) && !test_task_ux(curr)))
+		goto preempt;
+#endif
 
 	/*
 	 * If @p has a shorter slice than current and @p is eligible, override
