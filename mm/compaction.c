@@ -9,6 +9,9 @@
  * Copyright IBM Corp. 2007-2010 Mel Gorman <mel@csn.ul.ie>
  */
 #include <linux/cpu.h>
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 #include <linux/swap.h>
 #include <linux/migrate.h>
 #include <linux/compaction.h>
@@ -2351,6 +2354,11 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 
 	if (!gfp_compaction_allowed(gfp_mask))
 		return COMPACT_SKIPPED;
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (test_task_ux(current) && prio != COMPACT_PRIO_SYNC_FULL)
+		return COMPACT_SKIPPED;
+#endif
 
 	trace_mm_compaction_try_to_compact_pages(order, gfp_mask, prio);
 
