@@ -725,9 +725,9 @@ endif
 
 ifneq ($(filter y, \
 	$(CONFIG_ARCH_KONA)),)
-KBUILD_CFLAGS   += $(call cc-option,-mcpu=cortex-a77)
-KBUILD_AFLAGS   += $(call cc-option,-mcpu=cortex-a77)
-KBUILD_LDFLAGS  += $(call cc-option,-mllvm -mcpu=cortex-a77)
+KBUILD_CFLAGS   += $(call cc-option,-mcpu=cortex-a77+crypto+fp16+dotprod+rcpc) $(call cc-option,-mtune=cortex-a77)
+KBUILD_AFLAGS   += $(call cc-option,-mcpu=cortex-a77+crypto+fp16+dotprod+rcpc) $(call cc-option,-mtune=cortex-a77)
+KBUILD_LDFLAGS  += $(call ld-option,--mcpu=cortex-a77+crypto+fp16+dotprod+rcpc) $(call cc-option,-mtune=cortex-a77) $(call ld-option,--icf=safe)
 else ifneq ($(filter y, \
 	$(CONFIG_ARCH_LITO) \
 	$(CONFIG_ARCH_LAGOON)),)
