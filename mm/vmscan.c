@@ -4976,6 +4976,12 @@ static long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *sc, bool 
 	if (sc->priority == DEF_PRIORITY)
 		return nr_to_scan;
 
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (!current_is_kswapd() && sc->priority > DEF_PRIORITY - 3 &&
+	    test_task_ux(current))
+		return nr_to_scan;
+#endif
+
 	/* skip this lruvec as it's low on cold pages */
 	return try_to_inc_max_seq(lruvec, max_seq, sc, can_swap, false) ? -1 : 0;
 }

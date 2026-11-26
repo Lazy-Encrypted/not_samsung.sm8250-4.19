@@ -18,6 +18,7 @@ static bool is_key_task(struct task_struct *tsk)
 	return (
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 		test_task_ux(tsk) ||
+		(sysctl_sched_assist_scene & SA_LAUNCH) ||
 #endif
 		rt_task(tsk));
 }
@@ -29,7 +30,7 @@ bool is_lowmem(void)
 	for_each_zone(zone) {
 		if (!managed_zone(zone))
 			continue;
-		if (zone_watermark_ok(zone, 0, high_wmark_pages(zone), 0, 0))
+		if (zone_watermark_ok(zone, 0, low_wmark_pages(zone), 0, 0))
 			return false;
 	}
 	return true;
