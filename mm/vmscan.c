@@ -3909,16 +3909,43 @@ static void walk_mm(struct lruvec *lruvec, struct mm_struct *mm, struct lru_gen_
 	} while (err == -EAGAIN);
 }
 
+static bool is_primary_kswapd(struct pglist_data *pgdat)
+{
+	if (!current_is_kswapd())
+		return false;
+#ifdef CONFIG_OPLUS_MULTI_KSWAPD
+	if (pgdat)
+		return current == pgdat->kswapd[0];
+	return current == NODE_DATA(numa_node_id())->kswapd[0];
+#else
+	return true;
+#endif
+}
+
+static bool is_pgdat_mm_walk(struct lru_gen_mm_walk *walk)
+{
+	int nid;
+
+	if (!walk)
+		return false;
+
+	for_each_online_node(nid) {
+		if (walk == &NODE_DATA(nid)->mm_walk)
+			return true;
+	}
+	return false;
+}
+
 static struct lru_gen_mm_walk *set_mm_walk(struct pglist_data *pgdat, bool force_alloc)
 {
 	struct lru_gen_mm_walk *walk = current->reclaim_state->mm_walk;
 
-	if (pgdat && current_is_kswapd()) {
+	if (pgdat && is_primary_kswapd(pgdat)) {
 		VM_WARN_ON_ONCE(walk);
 
 		walk = &pgdat->mm_walk;
 	} else if (!walk && force_alloc) {
-		VM_WARN_ON_ONCE(current_is_kswapd());
+		VM_WARN_ON_ONCE(is_primary_kswapd(pgdat));
 
 		walk = kzalloc(sizeof(*walk), __GFP_HIGH | __GFP_NOMEMALLOC | __GFP_NOWARN);
 	}
@@ -3937,7 +3964,7 @@ static void clear_mm_walk(void)
 
 	current->reclaim_state->mm_walk = NULL;
 
-	if (!current_is_kswapd())
+	if (!is_pgdat_mm_walk(walk))
 		kfree(walk);
 }
 
