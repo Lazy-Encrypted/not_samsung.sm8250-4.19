@@ -2045,7 +2045,6 @@ static __latent_entropy struct task_struct *copy_process(
 	p->ux_state = 0;
 	p->ux_im_flag = 0;
 	p->ux_depth = 0;
-	atomic64_set(&p->inherit_ux, 0);
 #endif
 
 	/* Perform scheduler related setup. Assign this task to a CPU. */

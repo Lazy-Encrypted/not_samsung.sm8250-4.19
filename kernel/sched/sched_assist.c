@@ -104,68 +104,6 @@ bool test_task_ux(struct task_struct *task)
 }
 EXPORT_SYMBOL(test_task_ux);
 
-bool test_inherit_ux(struct task_struct *task, int type)
-{
-	u64 inherit_ux;
-
-	if (!task || type < 0 || type >= INHERIT_UX_MAX)
-		return false;
-
-	inherit_ux = atomic64_read(&task->inherit_ux);
-	return ((inherit_ux >> (type * 8)) & 0xffULL) > 0;
-}
-EXPORT_SYMBOL(test_inherit_ux);
-
-void dynamic_ux_enqueue(struct task_struct *task, int type, int depth)
-{
-	u64 old, new_val, cnt;
-	int shift;
-
-	if (!sysctl_sched_assist_enabled || !task || type < 0 || type >= INHERIT_UX_MAX)
-		return;
-
-	if (depth >= INHERIT_UX_MAX_DEPTH)
-		return;
-
-	shift = type * 8;
-	do {
-		old = atomic64_read(&task->inherit_ux);
-		cnt = (old >> shift) & 0xffULL;
-		if (cnt >= 0xfeULL)
-			return;
-		new_val = old + (1ULL << shift);
-	} while (atomic64_cmpxchg(&task->inherit_ux, old, new_val) != old);
-
-	task->ux_state |= SA_TYPE_INHERIT;
-	if (depth + 1 > task->ux_depth)
-		task->ux_depth = depth + 1;
-}
-EXPORT_SYMBOL(dynamic_ux_enqueue);
-
-void dynamic_ux_dequeue(struct task_struct *task, int type)
-{
-	u64 old, new_val, cnt;
-	int shift;
-
-	if (!task || type < 0 || type >= INHERIT_UX_MAX)
-		return;
-
-	shift = type * 8;
-	do {
-		old = atomic64_read(&task->inherit_ux);
-		cnt = (old >> shift) & 0xffULL;
-		if (cnt == 0)
-			return;
-		new_val = old - (1ULL << shift);
-	} while (atomic64_cmpxchg(&task->inherit_ux, old, new_val) != old);
-
-	if (new_val == 0) {
-		task->ux_state &= ~SA_TYPE_INHERIT;
-		task->ux_depth = 0;
-	}
-}
-EXPORT_SYMBOL(dynamic_ux_dequeue);
-
 /* Generic simple int proc read/write macros */
 #define DEFINE_PROC_INT_OPS(name, var)						\
 static ssize_t proc_##name##_read(struct file *file, char __user *buf,		\

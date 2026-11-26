@@ -18,10 +18,6 @@
  * Also see Documentation/locking/mutex-design.txt.
  */
 #include <linux/mutex.h>
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-#include <linux/rcupdate.h>
-#include <linux/sched_assist.h>
-#endif
 #include <linux/ww_mutex.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/rt.h>
@@ -188,26 +184,7 @@ __mutex_add_waiter(struct mutex *lock, struct mutex_waiter *waiter,
 {
 	debug_mutex_add_waiter(lock, waiter, current);
 
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (list == &lock->wait_list && test_task_ux(current)) {
-		struct mutex_waiter *w;
-		bool inserted = false;
-
-		list_for_each_entry(w, &lock->wait_list, list) {
-			if (w->task && !test_task_ux(w->task)) {
-				list_add_tail(&waiter->list, &w->list);
-				inserted = true;
-				break;
-			}
-		}
-		if (!inserted)
-			list_add_tail(&waiter->list, list);
-	} else {
-		list_add_tail(&waiter->list, list);
-	}
-#else
 	list_add_tail(&waiter->list, list);
-#endif
 	if (__mutex_waiter_is_first(lock, waiter))
 		__mutex_set_flag(lock, MUTEX_FLAG_WAITERS);
 }
@@ -759,10 +736,6 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
  */
 void __sched mutex_unlock(struct mutex *lock)
 {
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (unlikely(test_inherit_ux(current, INHERIT_UX_MUTEX)))
-		dynamic_ux_dequeue(current, INHERIT_UX_MUTEX);
-#endif
 #ifndef CONFIG_DEBUG_LOCK_ALLOC
 	if (__mutex_unlock_fast(lock))
 		return;
@@ -1033,17 +1006,6 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	}
 
 	waiter.task = current;
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (test_task_ux(current)) {
-		struct task_struct *owner;
-
-		rcu_read_lock();
-		owner = __mutex_owner(lock);
-		if (owner && owner != current && !test_task_ux(owner))
-			dynamic_ux_enqueue(owner, INHERIT_UX_MUTEX, current->ux_depth);
-		rcu_read_unlock();
-	}
-#endif
 
 	set_current_state(state);
 	for (;;) {

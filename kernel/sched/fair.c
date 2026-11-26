@@ -8431,7 +8431,6 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 	unsigned long little_cap = capacity_orig_of(0);
 	int best_idle = -1;
 	int best_busy = -1;
-	unsigned int min_nr = UINT_MAX;
 	int i;
 
 	if (cpu_active(prev_cpu) &&
@@ -8440,30 +8439,31 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 	    idle_cpu(prev_cpu))
 		return prev_cpu;
 
+	rcu_read_lock();
 	for_each_cpu_and(i, cpu_active_mask, &p->cpus_allowed) {
 		if (capacity_orig_of(i) <= little_cap)
+			continue;
+		if (cpu_rq(i)->rt.rt_nr_running)
 			continue;
 
 		if (idle_cpu(i)) {
 			if (best_idle < 0 ||
-			    capacity_orig_of(i) > capacity_orig_of(best_idle))
+			    capacity_orig_of(i) < capacity_orig_of(best_idle))
 				best_idle = i;
-		} else if (best_idle < 0) {
-			unsigned int nr = cpu_rq(i)->nr_running;
-			if (nr < min_nr) {
-				min_nr = nr;
+		} else if (best_idle < 0 && best_busy < 0) {
+			struct rq *rq = cpu_rq(i);
+			struct task_struct *curr = READ_ONCE(rq->curr);
+
+			if (rq->nr_running == 1 && curr && !test_task_ux(curr))
 				best_busy = i;
-			}
 		}
 	}
+	rcu_read_unlock();
 
 	if (best_idle >= 0)
 		return best_idle;
 
-	if (best_busy >= 0 && min_nr <= 2)
-		return best_busy;
-
-	return -1;
+	return best_busy;
 }
 #endif
 

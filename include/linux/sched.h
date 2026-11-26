@@ -1420,7 +1420,6 @@ struct task_struct {
 	int				ux_state;
 	int				ux_im_flag;
 	int				ux_depth;
-	atomic64_t			inherit_ux;
 #endif
 	/*
 	 * New fields for task_struct should be added above here, so that

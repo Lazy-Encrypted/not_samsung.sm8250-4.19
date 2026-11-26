@@ -1735,7 +1735,7 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 	bool sync = (sbi->readahead_sync_decompress &&
 			nr_pages <= sbi->max_sync_decompress_pages);
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (!sync && nr_pages <= 16 &&
+	if (!sync && nr_pages <= 8 &&
 	    (test_task_ux(current) || (sysctl_sched_assist_scene & SA_LAUNCH)))
 		sync = true;
 #endif
