@@ -1497,7 +1497,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 #endif
 	migratetype = get_pfnblock_migratetype(page, pfn);
 #if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-	if (ux_page_pool_enable) {
+	if (ux_page_pool_enable && zone_idx(page_zone(page)) == ZONE_NORMAL) {
 		struct zone *z = page_zone(page);
 		unsigned long mark = z->_watermark[WMARK_LOW];
 		long free_pages = zone_page_state(z, NR_FREE_PAGES);
@@ -3223,7 +3223,7 @@ void free_unref_page(struct page *page)
 		return;
 
 #if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-	if (ux_page_pool_enable) {
+	if (ux_page_pool_enable && zone_idx(zone) == ZONE_NORMAL) {
 		unsigned long mark = zone->_watermark[WMARK_LOW];
 		long free_pages = zone_page_state(zone, NR_FREE_PAGES);
 		int migratetype = get_pcppage_migratetype(page);

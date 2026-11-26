@@ -25,6 +25,7 @@
 #include <linux/sched_assist.h>
 #include <linux/sysctl.h>
 #include <linux/shrinker.h>
+#include <linux/swap.h>
 
 #include "ux_page_pool.h"
 
@@ -116,44 +117,52 @@ static void page_pool_wakeup_process(struct ux_page_pool *pool)
 	}
 }
 
-void __maybe_unused set_ux_page_pool_fillthread_cpus(void)
+static bool set_ux_page_pool_fillthread_cpus(void)
 {
-	struct cpumask mask;
-	struct cpumask *cpumask = &mask;
+	struct cpumask mask, max_cpus;
 	pg_data_t *pgdat = NODE_DATA(0);
-	unsigned int cpu = 0, cpufreq_max_tmp = 0;
-	struct cpufreq_policy *policy_max = NULL;
+	unsigned int cpu, cpufreq_max_tmp = 0;
+	bool found = false;
 
+	cpumask_clear(&max_cpus);
 	for_each_possible_cpu(cpu) {
 		struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
 
-		if (policy == NULL)
+		if (!policy)
 			continue;
 
-		if (policy->cpuinfo.max_freq >= cpufreq_max_tmp) {
+		if (policy->cpuinfo.max_freq > cpufreq_max_tmp) {
 			cpufreq_max_tmp = policy->cpuinfo.max_freq;
-			policy_max = policy;
+			cpumask_copy(&max_cpus, policy->related_cpus);
+			found = true;
+		} else if (found && policy->cpuinfo.max_freq == cpufreq_max_tmp) {
+			cpumask_or(&max_cpus, &max_cpus, policy->related_cpus);
 		}
+		cpufreq_cpu_put(policy);
 	}
 
-	if (policy_max) {
-		cpumask_copy(cpumask, cpumask_of_node(pgdat->node_id));
-		cpumask_andnot(cpumask, cpumask, policy_max->related_cpus);
+	if (!found)
+		return false;
 
-		if (!cpumask_empty(cpumask)) {
-			set_cpus_allowed_ptr(ux_page_pool_tsk, cpumask);
-		}
-	}
+	cpumask_copy(&mask, cpumask_of_node(pgdat->node_id));
+	cpumask_andnot(&mask, &mask, &max_cpus);
+	if (!cpumask_empty(&mask))
+		set_cpus_allowed_ptr(current, &mask);
+
+	return true;
 }
 
 static int ux_page_pool_fillthread(void *p)
 {
 	struct ux_page_pool *pool;
+	bool affinity_set = false;
 	int i, j;
 	int ret;
 
 	if (unlikely(!READ_ONCE(ux_page_pool_enabled)))
 		return -EINVAL;
+
+	set_user_nice(current, 5);
 
 	while (!kthread_should_stop()) {
 		ret = wait_event_interruptible(kworkthread_waitq,
@@ -165,6 +174,8 @@ static int ux_page_pool_fillthread(void *p)
 			continue;
 
 		atomic_set(&kworkthread_wait_flag, 0);
+		if (unlikely(!affinity_set))
+			affinity_set = set_ux_page_pool_fillthread_cpus();
 
 		for (i = 0; i < NUM_ORDERS; i++) {
 			pool = pools[i];
@@ -373,9 +384,33 @@ static int page_pool_fill(struct ux_page_pool *pool, int migratetype)
 	return true;
 }
 
+static bool ux_page_pool_under_low_wmark(void)
+{
+	struct zone *zone;
+
+	for_each_populated_zone(zone) {
+		if (zone_idx(zone) != ZONE_NORMAL)
+			continue;
+		if (zone_watermark_ok(zone, 0, low_wmark_pages(zone), ZONE_NORMAL, 0))
+			return false;
+	}
+	return true;
+}
+
 static unsigned long ux_page_pool_count_objects(struct shrinker *shrinker,
 						struct shrink_control *sc)
 {
+	if (unlikely(!READ_ONCE(ux_page_pool_enabled)))
+		return 0;
+
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (!current_is_kswapd() && test_task_ux(current))
+		return 0;
+#endif
+
+	if (!ux_page_pool_under_low_wmark())
+		return 0;
+
 	return ux_page_pool_cached_pages();
 }
 
@@ -634,7 +669,7 @@ static int ux_page_pool_init(void)
 	}
 
 	for (i = 0; i < NUM_ORDERS; i++) {
-		pools[i] = ux_page_pool_create((GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN |
+		pools[i] = ux_page_pool_create((GFP_HIGHUSER | __GFP_NOWARN |
 			   __GFP_NORETRY) & ~__GFP_RECLAIM, orders[i], page_pool_nr_blocks[i]);
 		if (IS_ERR_OR_NULL(pools[i])) {
 			ret = pools[i] ? PTR_ERR(pools[i]) : -ENOMEM;
