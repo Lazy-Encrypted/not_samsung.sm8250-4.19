@@ -465,6 +465,8 @@ int ux_page_pool_refill(struct page *page, unsigned int order, int migratetype)
 	pool = READ_ONCE(pools[order_ind]);
 	if (pool == NULL)
 		return false;
+	if (READ_ONCE(pool->count[migratetype]) >= READ_ONCE(pool->high[migratetype]))
+		return false;
 	if (!page_pool_refill_allowed(pool))
 		return false;
 

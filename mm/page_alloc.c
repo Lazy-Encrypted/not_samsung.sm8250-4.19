@@ -2906,7 +2906,7 @@ static struct list_head *get_populated_pcp_list(struct zone *zone,
 
 	if (list_empty(list)) {
 #if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-		if (ux_page_pool_enable) {
+		if (ux_page_pool_enable && zone_idx(zone) == ZONE_NORMAL) {
 			if (is_critical_zeroslowpath_task(current)) {
 				int mt = (migratetype == MIGRATE_UNMOVABLE) ?
 					UX_POOL_MIGRATETYPE_UNMOVABLE : UX_POOL_MIGRATETYPE_MOVABLE;
@@ -3535,7 +3535,10 @@ struct page *rmqueue(struct zone *preferred_zone,
 	}
 
 #if defined(CONFIG_OPLUS_UXMEM_OPT) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
-	if (order == 1 && ux_page_pool_enable && is_critical_zeroslowpath_task(current)) {
+	if (order == 1 && ux_page_pool_enable &&
+	    zone_idx(zone) == ZONE_NORMAL &&
+	    !(gfp_flags & (__GFP_DMA | __GFP_DMA32)) &&
+	    is_critical_zeroslowpath_task(current)) {
 		int mt = (migratetype == MIGRATE_UNMOVABLE) ?
 			 UX_POOL_MIGRATETYPE_UNMOVABLE : UX_POOL_MIGRATETYPE_MOVABLE;
 		page = ux_page_pool_alloc_pages(1, mt, false);
@@ -4963,8 +4966,11 @@ retry:
 		 * 2. Set alloc_flags ALLOC_HARDER, and get page from buddy
 		 *    when get page fail from ux pool
 		 */
-		if (is_critical_zeroslowpath_task(current)) {
-			page = ux_page_pool_alloc_pages(order, ac->migratetype, true);
+		if (is_critical_zeroslowpath_task(current) &&
+		    !(gfp_mask & (__GFP_DMA | __GFP_DMA32))) {
+			int mt = (ac->migratetype == MIGRATE_UNMOVABLE) ?
+				 UX_POOL_MIGRATETYPE_UNMOVABLE : UX_POOL_MIGRATETYPE_MOVABLE;
+			page = ux_page_pool_alloc_pages(order, mt, false);
 			if (page) {
 				prep_new_page(page, order, gfp_mask, alloc_flags);
 				goto got_pg;
