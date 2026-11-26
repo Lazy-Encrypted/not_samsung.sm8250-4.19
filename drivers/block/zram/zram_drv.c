@@ -44,7 +44,7 @@ static DEFINE_IDR(zram_index_idr);
 static DEFINE_MUTEX(zram_index_mutex);
 
 static int zram_major;
-static const char *default_compressor = CONFIG_ZRAM_DEF_COMP;
+static const char *default_compressor = "lz4";
 
 #define ZRAM_MAX_ALGO_NAME_SZ	128
 
@@ -1201,6 +1201,9 @@ static int __comp_algorithm_store(struct zram *zram, u32 prio, const char *buf)
 	sz = strlen(buf);
 	if (sz >= ZRAM_MAX_ALGO_NAME_SZ)
 		return -E2BIG;
+
+	if (sysfs_streq(buf, "lz4p"))
+		buf = "lz4";
 
 	alg = zcomp_lookup_backend_name(buf);
 	if (!alg)
