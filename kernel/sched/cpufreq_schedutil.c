@@ -549,6 +549,39 @@ static void sugov_get_util(struct sugov_cpu *sg_cpu, unsigned long boost)
 	/* UCLAMP-aware dynamic boost */
 	util = sugov_apply_uclamp_boost(sg_cpu, util);
 
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (sysctl_sched_assist_enabled) {
+		struct rq *rq = cpu_rq(sg_cpu->cpu);
+
+		if (rq->nr_running) {
+			struct task_struct *curr;
+			bool is_ux = false;
+
+			rcu_read_lock();
+			curr = READ_ONCE(rq->curr);
+			if (curr && curr != rq->idle && test_task_ux(curr))
+				is_ux = true;
+			rcu_read_unlock();
+
+			if (is_ux) {
+				unsigned long cap = capacity_orig_of(sg_cpu->cpu);
+				unsigned long ux_floor;
+
+				if (sysctl_sched_assist_scene &
+				    (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE))
+					ux_floor = (cap * 75) / 100;
+				else
+					ux_floor = (cap * 55) / 100;
+
+				if (max && ux_floor > max)
+					ux_floor = max;
+				util = max(util, ux_floor);
+				min = max(min, ux_floor);
+			}
+		}
+	}
+#endif
+
 	/* Existing IO/wakeup boost */
 	util = max(util, boost);
 
