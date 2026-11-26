@@ -6676,7 +6676,19 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 				sc.gfp_mask,
 				sc.reclaim_idx);
 
-	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (test_task_ux(current)) {
+		sc.may_swap = 0;
+		sc.may_writepage = 0;
+		nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+		if (!nr_reclaimed) {
+			sc.may_swap = 1;
+			sc.priority = DEF_PRIORITY;
+			nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+		}
+	} else
+#endif
+		nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 
 	trace_mm_vmscan_direct_reclaim_end(nr_reclaimed);
 
