@@ -68,10 +68,27 @@ extern int sched_assist_scene_sysctl_handler(struct ctl_table *table, int write,
 					     void __user *buffer, size_t *lenp,
 					     loff_t *ppos);
 
+/* Dynamic UX inheritance types (OPlus Locking Strategy 6.x) */
+enum {
+	INHERIT_UX_MUTEX = 0,
+	INHERIT_UX_RWSEM,
+	INHERIT_UX_FUTEX,
+	INHERIT_UX_BINDER,
+	INHERIT_UX_MAX,
+};
+
+#define INHERIT_UX_MAX_DEPTH	5
+
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 bool test_task_ux(struct task_struct *task);
+bool test_inherit_ux(struct task_struct *task, int type);
+void dynamic_ux_enqueue(struct task_struct *task, int type, int depth);
+void dynamic_ux_dequeue(struct task_struct *task, int type);
 #else
 static inline bool test_task_ux(struct task_struct *task) { return false; }
+static inline bool test_inherit_ux(struct task_struct *task, int type) { return false; }
+static inline void dynamic_ux_enqueue(struct task_struct *task, int type, int depth) {}
+static inline void dynamic_ux_dequeue(struct task_struct *task, int type) {}
 #endif
 
 #endif /* _LINUX_SCHED_ASSIST_H */
