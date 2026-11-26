@@ -8425,7 +8425,6 @@ eas_not_ready:
  *
  * preempt must be disabled.
  */
-static int
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 {
