@@ -3404,17 +3404,23 @@ static int ext4_readpage(struct file *file, struct page *page)
 	return ret;
 }
 
-static int
-ext4_readpages(struct file *file, struct address_space *mapping,
-		struct list_head *pages, unsigned nr_pages)
+static void ext4_readahead(struct readahead_control *rac)
 {
-	struct inode *inode = mapping->host;
+	struct inode *inode = rac->mapping->host;
 
-	/* If the file has inline data, no need to do readpages. */
-	if (ext4_has_inline_data(inode))
-		return 0;
+	/* If the file has inline data, no need to do readahead. */
+	if (ext4_has_inline_data(inode)) {
+		struct folio *folio;
 
-	return ext4_mpage_readpages(mapping, pages, NULL, nr_pages, true);
+		while ((folio = readahead_folio(rac))) {
+			unlock_page(folio_page(folio, 0));
+			folio_put(folio);
+		}
+		return;
+	}
+
+	ext4_mpage_readpages(rac->mapping, rac, NULL,
+			     readahead_count(rac), true);
 }
 
 static void ext4_invalidatepage(struct page *page, unsigned int offset,
@@ -4033,7 +4039,7 @@ static int ext4_set_page_dirty(struct page *page)
 
 static const struct address_space_operations ext4_aops = {
 	.readpage		= ext4_readpage,
-	.readpages		= ext4_readpages,
+	.readahead		= ext4_readahead,
 	.writepage		= ext4_writepage,
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_write_begin,
@@ -4050,7 +4056,7 @@ static const struct address_space_operations ext4_aops = {
 
 static const struct address_space_operations ext4_journalled_aops = {
 	.readpage		= ext4_readpage,
-	.readpages		= ext4_readpages,
+	.readahead		= ext4_readahead,
 	.writepage		= ext4_writepage,
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_write_begin,
@@ -4066,7 +4072,7 @@ static const struct address_space_operations ext4_journalled_aops = {
 
 static const struct address_space_operations ext4_da_aops = {
 	.readpage		= ext4_readpage,
-	.readpages		= ext4_readpages,
+	.readahead		= ext4_readahead,
 	.writepage		= ext4_writepage,
 	.writepages		= ext4_writepages,
 	.write_begin		= ext4_da_write_begin,

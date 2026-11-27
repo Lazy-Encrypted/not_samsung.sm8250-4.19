@@ -209,7 +209,7 @@ static inline loff_t ext4_readpage_limit(struct inode *inode)
 }
 
 int ext4_mpage_readpages(struct address_space *mapping,
-			 struct list_head *pages, struct page *page,
+			 struct readahead_control *rac, struct page *page,
 			 unsigned nr_pages, bool is_readahead)
 {
 	struct bio *bio = NULL;
@@ -230,6 +230,9 @@ int ext4_mpage_readpages(struct address_space *mapping,
 	unsigned relative_block = 0;
 	struct ext4_map_blocks map;
 
+	if (rac)
+		nr_pages = readahead_count(rac);
+
 	map.m_pblk = 0;
 	map.m_lblk = 0;
 	map.m_len = 0;
@@ -239,14 +242,14 @@ int ext4_mpage_readpages(struct address_space *mapping,
 		int fully_mapped = 1;
 		unsigned first_hole = blocks_per_page;
 
-		prefetchw(&page->flags);
-		if (pages) {
-			page = list_entry(pages->prev, struct page, lru);
-			list_del(&page->lru);
-			if (add_to_page_cache_lru(page, mapping, page->index,
-				  readahead_gfp_mask(mapping)))
-				goto next_page;
+		if (rac) {
+			struct folio *folio = readahead_folio(rac);
+
+			if (unlikely(!folio))
+				break;
+			page = folio_page(folio, 0);
 		}
+		prefetchw(&page->flags);
 
 		if (page_has_buffers(page))
 			goto confused;
@@ -395,10 +398,9 @@ int ext4_mpage_readpages(struct address_space *mapping,
 		else
 			unlock_page(page);
 	next_page:
-		if (pages)
+		if (rac)
 			put_page(page);
 	}
-	BUG_ON(pages && !list_empty(pages));
 	if (bio)
 		submit_bio(bio);
 	return 0;
