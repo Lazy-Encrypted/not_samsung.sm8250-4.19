@@ -2494,7 +2494,7 @@ out:
  * from read-ahead.
  */
 int f2fs_mpage_readpages(struct address_space *mapping,
-			struct list_head *pages, struct page *page,
+			struct readahead_control *rac, struct page *page,
 			unsigned nr_pages, bool is_readahead)
 {
 	pgoff_t next_pgofs = 0;
@@ -2517,18 +2517,20 @@ int f2fs_mpage_readpages(struct address_space *mapping,
 #endif
 	unsigned max_nr_pages = nr_pages;
 	int ret = 0;
+	bool drop_ra = false;
+	bool traced = false;
+
+	if (rac)
+		nr_pages = max_nr_pages = readahead_count(rac);
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	if (f2fs_compressed_file(inode)) {
-		pgoff_t index = pages ?
-			list_last_entry(pages, struct page, lru)->index :
-			page->index;
+		pgoff_t index = rac ? readahead_index(rac) : page->index;
 
 		max_nr_pages = round_up(index + nr_pages, cc.cluster_size) -
 				round_down(index, cc.cluster_size);
 	}
 #endif
-	bool drop_ra = false;
 
 	/* this is real from f2fs_merkle_tree_readahead() in old kernel only. */
 	if (!nr_pages)
@@ -2547,24 +2549,31 @@ int f2fs_mpage_readpages(struct address_space *mapping,
 	 * Two readahead threads for same address range can cause race condition
 	 * which fragments sequential read IOs. So let's avoid each other.
 	 */
-	if (pages && is_readahead) {
-		page = list_last_entry(pages, struct page, lru);
-		if (READ_ONCE(F2FS_I(inode)->ra_offset) == page_index(page))
+	if (rac && is_readahead) {
+		pgoff_t ra_index = readahead_index(rac);
+
+		if (READ_ONCE(F2FS_I(inode)->ra_offset) == ra_index)
 			drop_ra = true;
 		else
-			WRITE_ONCE(F2FS_I(inode)->ra_offset, page_index(page));
+			WRITE_ONCE(F2FS_I(inode)->ra_offset, ra_index);
 	}
 
 	for (; nr_pages; nr_pages--) {
-		if (pages) {
-			page = list_last_entry(pages, struct page, lru);
+		if (rac) {
+			struct folio *folio = readahead_folio(rac);
 
+			if (unlikely(!folio))
+				break;
+			page = folio_page(folio, 0);
 			prefetchw(&page->flags);
-			list_del(&page->lru);
-			if (drop_ra || add_to_page_cache_lru(page, mapping,
-						  page_index(page),
-						  readahead_gfp_mask(mapping)))
+			if (!traced) {
+				trace_f2fs_readpages(inode, page, nr_pages);
+				traced = true;
+			}
+			if (drop_ra) {
+				unlock_page(page);
 				goto next_page;
+			}
 		}
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
@@ -2619,7 +2628,7 @@ set_error_page:
 		}
 
 next_page:
-		if (pages)
+		if (rac)
 			put_page(page);
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
@@ -2635,13 +2644,20 @@ next_page:
 		}
 #endif
 	}
-	BUG_ON(pages && !list_empty(pages));
+#ifdef CONFIG_F2FS_FS_COMPRESSION
+	if (f2fs_compressed_file(inode) && !f2fs_cluster_is_empty(&cc)) {
+		ret = f2fs_read_multi_pages(&cc, &bio, max_nr_pages,
+					    &last_block_in_bio,
+					    is_readahead, false);
+		f2fs_destroy_compress_ctx(&cc, false);
+	}
+#endif
 	if (bio)
 		__submit_bio(F2FS_I_SB(inode), bio, DATA);
 
-	if (pages && is_readahead && !drop_ra)
+	if (rac && is_readahead && !drop_ra)
 		WRITE_ONCE(F2FS_I(inode)->ra_offset, -1);
-	return pages ? 0 : ret;
+	return rac ? 0 : ret;
 }
 
 static int f2fs_read_data_page(struct file *file, struct page *page)
@@ -2665,23 +2681,23 @@ static int f2fs_read_data_page(struct file *file, struct page *page)
 	return ret;
 }
 
-static int f2fs_read_data_pages(struct file *file,
-			struct address_space *mapping,
-			struct list_head *pages, unsigned nr_pages)
+static void f2fs_readahead(struct readahead_control *rac)
 {
-	struct inode *inode = mapping->host;
-	struct page *page = list_last_entry(pages, struct page, lru);
+	struct inode *inode = rac->mapping->host;
 
-	trace_f2fs_readpages(inode, page, nr_pages);
+	if (!f2fs_is_compress_backend_ready(inode) ||
+	    f2fs_has_inline_data(inode)) {
+		struct folio *folio;
 
-	if (!f2fs_is_compress_backend_ready(inode))
-		return 0;
+		while ((folio = readahead_folio(rac))) {
+			unlock_page(folio_page(folio, 0));
+			folio_put(folio);
+		}
+		return;
+	}
 
-	/* If the file has inline data, skip readpages */
-	if (f2fs_has_inline_data(inode))
-		return 0;
-
-	return f2fs_mpage_readpages(mapping, pages, NULL, nr_pages, true);
+	f2fs_mpage_readpages(rac->mapping, rac, NULL,
+			     readahead_count(rac), true);
 }
 
 int f2fs_encrypt_one_page(struct f2fs_io_info *fio)
@@ -4440,7 +4456,7 @@ static void f2fs_swap_deactivate(struct file *file)
 
 const struct address_space_operations f2fs_dblock_aops = {
 	.readpage	= f2fs_read_data_page,
-	.readpages	= f2fs_read_data_pages,
+	.readahead	= f2fs_readahead,
 	.writepage	= f2fs_write_data_page,
 	.writepages	= f2fs_write_data_pages,
 	.write_begin	= f2fs_write_begin,

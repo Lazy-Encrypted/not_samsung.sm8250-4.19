@@ -268,26 +268,40 @@ static int f2fs_get_verity_descriptor(struct inode *inode, void *buf,
 static void f2fs_merkle_tree_readahead(struct address_space *mapping,
 				       pgoff_t start_index, unsigned long count)
 {
-	LIST_HEAD(pages);
-	unsigned int nr_pages = 0;
-	struct page *page;
-	pgoff_t index;
+	DEFINE_READAHEAD(ractl, NULL, NULL, mapping, start_index);
 	struct blk_plug plug;
-
-	for (index = start_index; index < start_index + count; index++) {
-		page = xa_load(&mapping->i_pages, index);
-		if (!page || xa_is_value(page)) {
-			page = __page_cache_alloc(readahead_gfp_mask(mapping));
-			if (!page)
-				break;
-			page->index = index;
-			list_add(&page->lru, &pages);
-			nr_pages++;
-		}
-	}
+	pgoff_t index;
 
 	blk_start_plug(&plug);
-	f2fs_mpage_readpages(mapping, &pages, NULL, nr_pages, true);
+	for (index = start_index; index < start_index + count; index++) {
+		struct page *page = xa_load(&mapping->i_pages, index);
+
+		if (page && !xa_is_value(page)) {
+			if (readahead_count(&ractl))
+				f2fs_mpage_readpages(mapping, &ractl, NULL,
+						     readahead_count(&ractl),
+						     true);
+			ractl._index = index + 1;
+			continue;
+		}
+		page = __page_cache_alloc(readahead_gfp_mask(mapping));
+		if (!page)
+			break;
+		if (add_to_page_cache_lru(page, mapping, index,
+					  readahead_gfp_mask(mapping))) {
+			put_page(page);
+			if (readahead_count(&ractl))
+				f2fs_mpage_readpages(mapping, &ractl, NULL,
+						     readahead_count(&ractl),
+						     true);
+			ractl._index = index + 1;
+			continue;
+		}
+		ractl._nr_pages++;
+	}
+	if (readahead_count(&ractl))
+		f2fs_mpage_readpages(mapping, &ractl, NULL,
+				     readahead_count(&ractl), true);
 	blk_finish_plug(&plug);
 }
 
