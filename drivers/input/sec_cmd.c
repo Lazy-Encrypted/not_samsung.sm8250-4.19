@@ -678,7 +678,7 @@ int sec_cmd_init(struct sec_cmd_data *data, struct sec_cmd *cmds,
 		pr_err("%s %s: Failed to create class(sec) %ld\n", SECLOG, __func__, PTR_ERR(tsp_sec_class));
 		return PTR_ERR(tsp_sec_class);
 	}
-	data->fac_dev = device_create(tsp_sec_class, NULL, devt, data, dev_name);
+	data->fac_dev = device_create(tsp_sec_class, NULL, devt, data, "%s", dev_name);
 #endif
 
 	if (IS_ERR(data->fac_dev)) {
