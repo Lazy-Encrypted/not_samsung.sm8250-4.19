@@ -8436,6 +8436,7 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 	unsigned long little_cap = capacity_orig_of(0);
 	int best_idle = -1;
 	int best_busy = -1;
+	int least_loaded = -1;
 	int i;
 
 	if (cpu_active(prev_cpu) &&
@@ -8455,12 +8456,20 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 			if (best_idle < 0 ||
 			    capacity_orig_of(i) < capacity_orig_of(best_idle))
 				best_idle = i;
-		} else if (best_idle < 0 && best_busy < 0) {
+		} else {
 			struct rq *rq = cpu_rq(i);
 			struct task_struct *curr = READ_ONCE(rq->curr);
 
-			if (rq->nr_running == 1 && curr && !test_task_ux(curr))
+			if (best_idle < 0 && best_busy < 0 &&
+			    rq->nr_running == 1 && curr && !test_task_ux(curr))
 				best_busy = i;
+
+			if (sysctl_sched_assist_scene &
+			    (SA_SLIDE | SA_ANIM | SA_ANIM_START | SA_LAUNCH | SA_INPUT)) {
+				if (least_loaded < 0 ||
+				    rq->nr_running < cpu_rq(least_loaded)->nr_running)
+					least_loaded = i;
+			}
 		}
 	}
 	rcu_read_unlock();
@@ -8468,7 +8477,10 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 	if (best_idle >= 0)
 		return best_idle;
 
-	return best_busy;
+	if (best_busy >= 0)
+		return best_busy;
+
+	return least_loaded;
 }
 #endif
 
