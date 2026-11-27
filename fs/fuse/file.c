@@ -1052,12 +1052,16 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 	 * the kernel, so unless the daemon is aware of this file, ignore this
 	 * call.
 	 */
-	if (!get_fuse_inode(inode)->nodeid)
+	if (!get_fuse_inode(inode)->nodeid) {
+		unlock_page(page);
 		return -EIO;
+	}
 #endif
 
-	if (fuse_is_bad(inode))
+	if (fuse_is_bad(inode)) {
+		unlock_page(page);
 		return -EIO;
+	}
 
 	fuse_wait_on_page_writeback(inode, page->index);
 
@@ -1079,6 +1083,7 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 	if (WARN_ON(ap->num_pages >= data->max_pages)) {
 		unlock_page(page);
 		fuse_io_free(ia);
+		data->ia = NULL;
 		return -EIO;
 	}
 
@@ -1090,37 +1095,46 @@ static int fuse_readpages_fill(void *_data, struct page *page)
 	return 0;
 }
 
-static int fuse_readpages(struct file *file, struct address_space *mapping,
-			  struct list_head *pages, unsigned nr_pages)
+static void fuse_readahead(struct readahead_control *rac)
 {
-	struct inode *inode = mapping->host;
+	struct inode *inode = rac->mapping->host;
 	struct fuse_conn *fc = get_fuse_conn(inode);
-	struct fuse_fill_data data;
-	int err;
+	struct fuse_fill_data data = {
+		.file = rac->file,
+		.inode = inode,
+		.nr_pages = readahead_count(rac),
+	};
+	struct folio *folio;
 
-	err = -EIO;
-	if (fuse_is_bad(inode))
-		goto out;
+	if (fuse_is_bad(inode) || !rac->file)
+		goto out_unlock;
 
-	data.file = file;
-	data.inode = inode;
-	data.nr_pages = nr_pages;
-	data.max_pages = min_t(unsigned int, nr_pages, fc->max_pages);
-;
+	data.max_pages = min_t(unsigned int, data.nr_pages, fc->max_pages);
 	data.ia = fuse_io_alloc(NULL, data.max_pages);
-	err = -ENOMEM;
 	if (!data.ia)
-		goto out;
+		goto out_unlock;
 
-	err = read_cache_pages(mapping, pages, fuse_readpages_fill, &data);
-	if (!err) {
+	while ((folio = readahead_folio(rac))) {
+		struct page *page = folio_page(folio, 0);
+		int err;
+
+		err = fuse_readpages_fill(&data, page);
+		folio_put(folio);
+		if (err)
+			break;
+	}
+
+	if (data.ia) {
 		if (data.ia->ap.num_pages)
-			fuse_send_readpages(data.ia, file);
+			fuse_send_readpages(data.ia, rac->file);
 		else
 			fuse_io_free(data.ia);
 	}
-out:
-	return err;
+out_unlock:
+	while ((folio = readahead_folio(rac))) {
+		unlock_page(folio_page(folio, 0));
+		folio_put(folio);
+	}
 }
 
 static ssize_t fuse_cache_read_iter(struct kiocb *iocb, struct iov_iter *to)
@@ -3754,7 +3768,7 @@ static const struct address_space_operations fuse_file_aops  = {
 	.writepage	= fuse_writepage,
 	.writepages	= fuse_writepages,
 	.launder_page	= fuse_launder_page,
-	.readpages	= fuse_readpages,
+	.readahead	= fuse_readahead,
 	.set_page_dirty	= __set_page_dirty_nobuffers,
 	.bmap		= fuse_bmap,
 	.direct_IO	= fuse_direct_IO,
