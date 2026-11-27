@@ -165,6 +165,7 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 
 #ifdef CONFIG_SEC_DEBUG
 	unsigned long prev_fp = 0;
+	enum stack_type prev_stack_type = STACK_TYPE_UNKNOWN;
 #endif
 
 	pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
@@ -233,14 +234,23 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 		}
 
 #ifdef CONFIG_SEC_DEBUG
-		if (prev_fp >= frame.fp) {
-			if (on_accessible_stack(tsk, frame.fp, NULL)) {
-				printk("FP looks invalid : 0x%016lx state(0x%016lx) on_cpu(%d)@cpu%u\n",
-						frame.fp, tsk->state, tsk->on_cpu, tsk->cpu);
+		{
+			struct stack_info info;
+			bool accessible = on_accessible_stack(tsk, frame.fp, &info);
+
+			if (prev_fp >= frame.fp) {
+				if (!accessible)
+					break;
+				if (prev_stack_type == info.type) {
+					printk("FP looks invalid : 0x%016lx state(0x%016lx) on_cpu(%d)@cpu%u\n",
+							frame.fp, tsk->state, tsk->on_cpu, tsk->cpu);
+					break;
+				}
 			}
-			break;
+			if (accessible)
+				prev_stack_type = info.type;
+			prev_fp = frame.fp;
 		}
-		prev_fp = frame.fp;
 #endif
 	} while (!unwind_frame(tsk, &frame));
 
