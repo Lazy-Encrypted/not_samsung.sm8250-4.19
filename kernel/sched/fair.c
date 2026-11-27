@@ -8454,7 +8454,7 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 
 		if (idle_cpu(i)) {
 			if (best_idle < 0 ||
-			    capacity_orig_of(i) < capacity_orig_of(best_idle))
+			    capacity_orig_of(i) > capacity_orig_of(best_idle))
 				best_idle = i;
 		} else {
 			struct rq *rq = cpu_rq(i);
@@ -8464,12 +8464,9 @@ static int oplus_select_ux_cpu(struct task_struct *p, int prev_cpu)
 			    rq->nr_running == 1 && curr && !test_task_ux(curr))
 				best_busy = i;
 
-			if (sysctl_sched_assist_scene &
-			    (SA_SLIDE | SA_ANIM | SA_ANIM_START | SA_LAUNCH | SA_INPUT)) {
-				if (least_loaded < 0 ||
-				    rq->nr_running < cpu_rq(least_loaded)->nr_running)
-					least_loaded = i;
-			}
+			if (least_loaded < 0 ||
+			    rq->nr_running < cpu_rq(least_loaded)->nr_running)
+				least_loaded = i;
 		}
 	}
 	rcu_read_unlock();

@@ -581,7 +581,7 @@ static void sugov_get_util(struct sugov_cpu *sg_cpu, unsigned long boost)
 				unsigned long ux_floor;
 
 				if (sysctl_sched_assist_scene &
-				    (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE))
+				    (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE | SA_INPUT))
 					ux_floor = (cap * 75) / 100;
 				else
 					ux_floor = (cap * 55) / 100;
@@ -941,7 +941,6 @@ rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count
                 return -EINVAL;
 
         tunables->rate_limit_us = rate_limit_us;
-        tunables->up_rate_limit_us = rate_limit_us;
         tunables->down_rate_limit_us = rate_limit_us;
 
         list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
@@ -969,7 +968,7 @@ up_rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t co
 	if (kstrtouint(buf, 10, &rate_limit_us))
 		return -EINVAL;
 
-	tunables->up_rate_limit_us = rate_limit_us;
+	tunables->up_rate_limit_us = min(rate_limit_us, 1000U);
 
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
 		sugov_update_rate_limit_us(sg_policy);

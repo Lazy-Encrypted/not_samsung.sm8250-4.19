@@ -100,6 +100,30 @@ bool test_task_ux(struct task_struct *task)
 	    task->ux_im_flag == IM_FLAG_LAUNCHER_NON_UX_RENDER)
 		return true;
 
+	/* Dynamic detection for Android / One UI tasks if no OPlus userspace daemon is running */
+	if (task->comm[0]) {
+		if (!strcmp(task->comm, "surfaceflinger") ||
+		    !strcmp(task->comm, "RenderEngine")) {
+			task->ux_im_flag = IM_FLAG_SURFACEFLINGER;
+			task->ux_state |= SA_TYPE_ANIMATOR;
+			return true;
+		}
+		if (!strcmp(task->comm, "RenderThread")) {
+			task->ux_state |= SA_TYPE_ANIMATOR;
+			return true;
+		}
+		if (strstr(task->comm, "composer")) {
+			task->ux_im_flag = IM_FLAG_HWC;
+			return true;
+		}
+		if (!strcmp(task->comm, "system_server") ||
+		    strstr(task->comm, "launcher")) {
+			task->ux_im_flag = IM_FLAG_LAUNCHER;
+			task->ux_state |= SA_TYPE_HEAVY;
+			return true;
+		}
+	}
+
 	return false;
 }
 EXPORT_SYMBOL(test_task_ux);
