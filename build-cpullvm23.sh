@@ -1,4 +1,7 @@
-SECONDS=0 # builtin bash timer
+#!/usr/bin/env bash
+set -e
+
+SECONDS=0
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -6,7 +9,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-export DEVICE=r8q
+export DEVICE="${DEVICE:-r8q}"
 
 PREBUILT_MODE=0
 
@@ -27,15 +30,15 @@ for arg in "$@"; do
 done
 
 # ===== AnyKernel3 =====
-AK3_REPO="https://github.com/doubledashdot/AnyKernel3"
-AK3_BRANCH="$DEVICE-ksu"
+AK3_REPO="https://github.com/Lazy-Encrypted/AnyKernel3"
+AK3_BRANCH="oplus"
 
-ZIPNAME="vanadium-$(date '+%Y%m%d').zip"
-TC_DIR="$(pwd)/tc/sdclang23"
+ZIPNAME="tachyon-kernel-$(date '+%Y%m%d')-cpullvm23.zip"
+TC_DIR="${TC_DIR:-$(pwd)/tc/sdclang23}"
 if [ "$PREBUILT_MODE" -eq 1 ]; then
-DEFCONFIG="vendor/kona-vanadium_defconfig vendor/samsung/$DEVICE.config vendor/extra/no-ksu.config vendor/extra/sdclang.config"
+    DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config vendor/not/localversion.config vendor/extra/sdclang.config"
 else
-DEFCONFIG="vendor/kona-vanadium_defconfig vendor/samsung/$DEVICE.config vendor/extra/ksu.config vendor/extra/sdclang.config"
+    DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config vendor/not/ksu.config vendor/not/localversion.config vendor/extra/sdclang.config"
 fi
 
 OUT_DIR="$(pwd)/out"
@@ -45,30 +48,22 @@ PREBUILT_DIR="$OUT_DIR/prebuilt-kernel"
 
 if test -z "$(git rev-parse --show-cdup 2>/dev/null)" &&
    head=$(git rev-parse --verify HEAD 2>/dev/null); then
-    ZIPNAME="${ZIPNAME::-4}-$(echo $head | cut -c1-8)-$DEVICE.zip"
+    ZIPNAME="tachyon-kernel-$(date '+%Y%m%d')-$(echo "$head" | cut -c1-12)-cpullvm23-$DEVICE.zip"
 fi
 
-rm -rf KernelSU
-
-curl -LSs "https://raw.githubusercontent.com/doubledashdot/sKernelSU/master/kernel/setup.sh" | bash -s master
-
-export PATH="$TC_DIR/bin:$PATH"
-
-if ! [ -d "$TC_DIR" ]; then
-    echo -e "${YELLOW}Snapdragon CPULLVM Compiler not found!${NC}"
+if ! [ -d "$TC_DIR/bin" ]; then
+    echo -e "${RED}Snapdragon CPULLVM Compiler not found at: $TC_DIR${NC}"
+    echo -e "${YELLOW}Instale o toolchain em $TC_DIR ou exporte TC_DIR=/caminho/para/sdclang23.${NC}"
     exit 1
 fi
 
-mkdir -p out
+export PATH="$(pwd)/bin:$TC_DIR/bin:$PATH"
+
+mkdir -p "$OUT_DIR"
 echo -e "${YELLOW}building with: $DEFCONFIG${NC}"
 
-make O=out ARCH=arm64 $DEFCONFIG
-make O=out ARCH=arm64 olddefconfig
-
-echo -e "\n${YELLOW}Starting compilation...${NC}\n"
-
 MAKE_ARGS=(
-    -j$(nproc --all)
+    -j"$(nproc --all)"
     HOSTCC=/usr/bin/clang
     HOSTCXX=/usr/bin/clang++
     O=out
@@ -76,7 +71,6 @@ MAKE_ARGS=(
     ARCH=arm64
     LD=ld.lld
     LD_COMPAT=ld.lld
-    KCFLAGS="-Wno-pointer-sign -Wno-default-const-init-field-unsafe -Wno-default-const-init-var-unsafe -Wno-undefined-optimized"
     AS=llvm-as
     AR=llvm-ar
     NM=llvm-nm
@@ -89,16 +83,21 @@ MAKE_ARGS=(
     LLVM_IAS=1
 )
 
+make O=out ARCH=arm64 HOSTCC=/usr/bin/clang HOSTCXX=/usr/bin/clang++ CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 $DEFCONFIG
+make O=out ARCH=arm64 HOSTCC=/usr/bin/clang HOSTCXX=/usr/bin/clang++ CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 olddefconfig
+
+echo -e "\n${YELLOW}Starting compilation...${NC}\n"
+
 make "${MAKE_ARGS[@]}" dtbo.img
 make "${MAKE_ARGS[@]}" Image
-    
+
 if [ -f "$BOOT_DIR/Image" ]; then
     echo -e "${GREEN}Kernel Image found!${NC}"
-    
+
     if [ -d "$DTS_DIR" ]; then
         echo -e "${BLUE}Generating dtb from $DTS_DIR...${NC}"
         cat $(find "$DTS_DIR" -type f -name "*.dtb" | sort) > "$BOOT_DIR/dtb"
-        
+
         if [ -f "$BOOT_DIR/dtb" ]; then
             echo -e "${GREEN}dtb generated successfully!${NC}"
         else
@@ -122,10 +121,8 @@ if [ "$PREBUILT_MODE" -eq 1 ]; then
     echo -e "${BLUE}Instalando kernel headers...${NC}"
     make "${MAKE_ARGS[@]}" INSTALL_HDR_PATH="$PREBUILT_DIR/kernel-headers" headers_install
 
-    # Limpar arquivos de controle gerados pelo kbuild
-    find "$PREBUILT_DIR/kernel-headers" \( -name "..install.cmd" -o -name ".install" \) -delete 2>/dev/null
+    find "$PREBUILT_DIR/kernel-headers" \( -name "..install.cmd" -o -name ".install" \) -delete 2>/dev/null || true
 
-    # Copiar headers da pasta include para a raiz de kernel-headers para compatibilidade ampla
     if [ -d "$PREBUILT_DIR/kernel-headers/include" ]; then
         cp -rn "$PREBUILT_DIR/kernel-headers/include/"* "$PREBUILT_DIR/kernel-headers/" 2>/dev/null || true
     fi
@@ -138,25 +135,35 @@ if [ "$PREBUILT_MODE" -eq 1 ]; then
     echo -e "\n${GREEN}Arquivos prebuilt gerados com sucesso em $PREBUILT_DIR:${NC}"
     ls -la "$PREBUILT_DIR"
 else
-    rm -rf AnyKernel3
-    echo "[*] Cloning AnyKernel3 for $DEVICE"
-    git clone -q -b "$AK3_BRANCH" "$AK3_REPO" --depth=1 AnyKernel3 || exit 1
+    if ! [ -d AnyKernel3 ]; then
+        echo "[*] Cloning AnyKernel3 for $DEVICE"
+        git clone -q -b "$AK3_BRANCH" "$AK3_REPO" --depth=1 AnyKernel3 || exit 1
+    fi
 
     echo -e "Preparing zip...\n"
 
-    rm -rf *.zip
     cp "$BOOT_DIR/dtbo.img" AnyKernel3/dtbo.img
     cp "$BOOT_DIR/Image" AnyKernel3/Image
     cp "$BOOT_DIR/dtb" AnyKernel3/dtb
 
-    cd AnyKernel3
-
-    zip -r9 "../$ZIPNAME" * -x .git README.md *placeholder
-    cd ..
+    if command -v zip >/dev/null 2>&1; then
+        (cd AnyKernel3 && zip -r9 "../$ZIPNAME" * -x .git README.md '*placeholder')
+    else
+        python3 - "$ZIPNAME" <<'EOF'
+import os, sys, zipfile
+zpath = sys.argv[1]
+skip = {'.git', 'README.md', 'placeholder'}
+with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk('AnyKernel3'):
+        dirs[:] = [d for d in dirs if d not in skip]
+        for fn in files:
+            if fn in skip:
+                continue
+            full = os.path.join(root, fn)
+            zf.write(full, os.path.relpath(full, 'AnyKernel3'))
+EOF
+    fi
 fi
-
-git restore drivers/Kconfig
-git restore drivers/Makefile
 
 echo -e "\n${GREEN}Completed in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s)!${NC}"
 if [ "$PREBUILT_MODE" -eq 1 ]; then

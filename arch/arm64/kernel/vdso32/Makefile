@@ -95,7 +95,7 @@ VDSO_CFLAGS += -D__uint128_t='void*'
 VDSO_CFLAGS += $(call cc32-disable-warning,shift-count-overflow)
 VDSO_CFLAGS += -Wno-int-to-pointer-cast
 
-ifeq ($(cc-name),clang)
+ifeq ($(CONFIG_CC_IS_CLANG), y)
 # Snapdragon LLVM specific warning
 VDSO_CFLAGS += $(call cc32-disable-warning, vectorizer-no-neon)
 endif

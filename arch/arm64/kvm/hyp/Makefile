@@ -7,7 +7,7 @@ ccflags-y += -fno-stack-protector -DDISABLE_BRANCH_PROFILING \
 		$(DISABLE_STACKLEAK_PLUGIN) \
 		$(DISABLE_CFI)
 
-ifeq ($(cc-name),clang)
+ifeq ($(CONFIG_CC_IS_CLANG), y)
 ccflags-y += -fno-jump-tables
 endif
 

@@ -376,8 +376,9 @@ HOSTCXX	= g++
 endif
 
 KBUILD_HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 \
-		-fomit-frame-pointer -std=gnu23 -pipe $(HOST_LFS_CFLAGS) \
+		-fomit-frame-pointer -pipe $(HOST_LFS_CFLAGS) \
 		$(HOSTCFLAGS)
+KBUILD_HOSTCFLAGS   += $(call hostcc-option,-std=gnu23,-std=gnu11)
 KBUILD_HOSTCXXFLAGS := -O3 $(HOST_LFS_CFLAGS) $(HOSTCXXFLAGS)
 
 KBUILD_HOSTLDFLAGS  := $(HOST_LFS_LDFLAGS) $(HOSTLDFLAGS)
@@ -388,6 +389,7 @@ CPP		= $(CC) -E
 ifneq ($(LLVM),)
 CC		= clang
 LD		= ld.lld
+LD_COMPAT	?= $(LD)
 AR		= llvm-ar
 NM		= llvm-nm
 OBJCOPY		= llvm-objcopy
@@ -452,7 +454,8 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
 		   -Werror=return-type -Wno-format-security \
-		   -std=gnu23 -pipe
+		   -pipe
+KBUILD_CFLAGS   += $(call cc-option,-std=gnu23,-std=gnu11)
 KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
@@ -463,7 +466,7 @@ KBUILD_LDFLAGS :=
 GCC_PLUGINS_CFLAGS :=
 CLANG_FLAGS :=
 
-export ARCH SRCARCH CONFIG_SHELL HOSTCC KBUILD_HOSTCFLAGS CROSS_COMPILE LD CC
+export ARCH SRCARCH CONFIG_SHELL HOSTCC KBUILD_HOSTCFLAGS CROSS_COMPILE LD LD_COMPAT CC
 export CPP AR NM STRIP OBJCOPY OBJDUMP PAHOLE RESOLVE_BTFIDS OBJSIZE READELF KBUILD_HOSTLDFLAGS KBUILD_HOSTLDLIBS
 export MAKE LEX YACC AWK GENKSYMS INSTALLKERNEL PERL PYTHON PYTHON2 PYTHON3 UTS_MACHINE
 export HOSTCXX KBUILD_HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
@@ -518,7 +521,7 @@ endif
 # and from include/config/auto.conf.cmd to detect the compiler upgrade.
 CC_VERSION_TEXT = $(shell $(CC) --version 2>/dev/null | head -n 1 | sed 's/\#//g')
 
-ifneq ($(findstring clang,$(CC_VERSION_TEXT)),)
+ifneq ($(or $(findstring clang,$(CC_VERSION_TEXT)),$(findstring Snapdragon,$(CC_VERSION_TEXT))),)
 # Individual arch/{arch}/Makefiles should use -EL/-EB to set intended
 # endianness and -m32/-m64 to set word size based on Kconfigs instead of
 # relying on the target triple.
@@ -853,6 +856,10 @@ KBUILD_CFLAGS += -Wno-asm-operand-widths
 KBUILD_CFLAGS += -Wno-initializer-overrides
 KBUILD_CFLAGS += $(call cc-option, -Wno-undefined-optimized)
 KBUILD_CFLAGS += $(call cc-option, -Wno-tautological-constant-out-of-range-compare)
+KBUILD_CFLAGS += $(call cc-disable-warning, default-const-init-unsafe)
+KBUILD_CFLAGS += $(call cc-disable-warning, default-const-init-field-unsafe)
+KBUILD_CFLAGS += $(call cc-disable-warning, default-const-init-var-unsafe)
+KBUILD_CFLAGS += $(call cc-disable-warning, vectorizer-no-neon)
 KBUILD_CFLAGS += $(call cc-option, -mllvm -disable-struct-const-merge)
 
 # Quiet clang warning: comparison of unsigned expression < 0 is always false
