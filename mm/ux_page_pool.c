@@ -669,7 +669,7 @@ static int ux_page_pool_init(void)
 	}
 
 	for (i = 0; i < NUM_ORDERS; i++) {
-		pools[i] = ux_page_pool_create((GFP_HIGHUSER | __GFP_NOWARN |
+		pools[i] = ux_page_pool_create((GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN |
 			   __GFP_NORETRY) & ~__GFP_RECLAIM, orders[i], page_pool_nr_blocks[i]);
 		if (IS_ERR_OR_NULL(pools[i])) {
 			ret = pools[i] ? PTR_ERR(pools[i]) : -ENOMEM;
