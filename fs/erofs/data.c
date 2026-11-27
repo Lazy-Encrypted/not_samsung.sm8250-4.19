@@ -72,12 +72,15 @@ void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
 	struct page *page = buf->page;
 
 	if (!page || page->index != index) {
+		struct folio *folio;
+
 		erofs_put_metabuf(buf);
-		page = read_cache_page_gfp(mapping, index,
+		folio = read_cache_folio_gfp(mapping, index,
 				mapping_gfp_constraint(mapping, ~__GFP_FS));
-		if (IS_ERR(page))
-			return page;
+		if (IS_ERR(folio))
+			return ERR_CAST(folio);
 		/* should already be PageUptodate, no need to lock page */
+		page = folio_file_page(folio, index);
 		buf->page = page;
 	}
 	if (buf->kmap_type == EROFS_NO_KMAP) {
@@ -426,8 +429,9 @@ submit_bio_out:
  * since we dont have write or truncate flows, so no inode
  * locking needs to be held at the moment.
  */
-static int erofs_raw_access_readpage(struct file *file, struct page *page)
+static int erofs_raw_access_read_folio(struct file *file, struct folio *folio)
 {
+	struct page *page = folio_page(folio, 0);
 	erofs_off_t last_block;
 	struct bio *bio;
 
@@ -441,6 +445,11 @@ static int erofs_raw_access_readpage(struct file *file, struct page *page)
 
 	DBG_BUGON(bio);	/* since we have only one bio -- must be NULL */
 	return 0;
+}
+
+static int erofs_raw_access_readpage(struct file *file, struct page *page)
+{
+	return erofs_raw_access_read_folio(file, page_folio(page));
 }
 
 static int erofs_raw_access_readpages(struct file *filp,

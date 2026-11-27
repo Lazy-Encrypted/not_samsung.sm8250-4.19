@@ -101,7 +101,9 @@ static struct page *find_target_block_classic(struct inode *dir,
 
 	while (head <= back) {
 		const int mid = head + (back - head) / 2;
-		struct page *page = read_mapping_page(mapping, mid, NULL);
+		struct folio *folio = read_cache_folio(mapping, mid, NULL, NULL);
+		struct page *page = IS_ERR(folio) ? ERR_CAST(folio) :
+				    folio_file_page(folio, mid);
 
 		if (!IS_ERR(page)) {
 			struct erofs_dirent *de = kmap_atomic(page);

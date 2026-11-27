@@ -1696,16 +1696,17 @@ static void z_erofs_pcluster_readmore(struct z_erofs_decompress_frontend *f,
 	}
 }
 
-static int z_erofs_readpage(struct file *file, struct page *page)
+static int z_erofs_read_folio(struct file *file, struct folio *folio)
 {
-	struct inode *const inode = page->mapping->host;
+	struct page *page = folio_page(folio, 0);
+	struct inode *const inode = folio_mapping(folio)->host;
 	struct z_erofs_decompress_frontend f = DECOMPRESS_FRONTEND_INIT(inode);
 	int err;
 	LIST_HEAD(pagepool);
 
 	trace_erofs_readpage(page, false);
 
-	f.headoffset = (erofs_off_t)page->index << PAGE_SHIFT;
+	f.headoffset = (erofs_off_t)folio_index(folio) << PAGE_SHIFT;
 
 	z_erofs_pcluster_readmore(&f, f.headoffset + PAGE_SIZE - 1,
 				  &pagepool, true);
@@ -1724,6 +1725,11 @@ static int z_erofs_readpage(struct file *file, struct page *page)
 	/* clean up the remaining free pages */
 	erofs_release_pages(&pagepool);
 	return err;
+}
+
+static int z_erofs_readpage(struct file *file, struct page *page)
+{
+	return z_erofs_read_folio(file, page_folio(page));
 }
 
 static int z_erofs_readpages(struct file *filp, struct address_space *mapping,

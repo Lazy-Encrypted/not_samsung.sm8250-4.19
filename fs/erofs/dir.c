@@ -92,17 +92,20 @@ static int erofs_readdir(struct file *f, struct dir_context *ctx)
 				page_cache_sync_readahead(mapping, ra, f, idx, pages);
 		}
 
-		dentry_page = read_mapping_page(mapping, i, NULL);
-		if (dentry_page == ERR_PTR(-ENOMEM)) {
-			err = -ENOMEM;
-			break;
-		} else if (IS_ERR(dentry_page)) {
-			erofs_err(dir->i_sb,
-				  "fail to readdir of logical block %u of nid %llu",
-				  i, EROFS_I(dir)->nid);
-			err = -EFSCORRUPTED;
+		struct folio *folio = read_cache_folio(mapping, i, NULL, NULL);
+
+		if (IS_ERR(folio)) {
+			if (PTR_ERR(folio) == -ENOMEM) {
+				err = -ENOMEM;
+			} else {
+				erofs_err(dir->i_sb,
+					  "fail to readdir of logical block %u of nid %llu",
+					  i, EROFS_I(dir)->nid);
+				err = -EFSCORRUPTED;
+			}
 			break;
 		}
+		dentry_page = folio_file_page(folio, i);
 
 		de = (struct erofs_dirent *)kmap(dentry_page);
 
