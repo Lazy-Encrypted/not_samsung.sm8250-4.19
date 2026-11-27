@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Check Out
         uses: actions/checkout@v3
+        with:
+          submodules: recursive
 
       - name: Set Timezone
         uses: szenius/set-timezone@v1.2
@@ -42,7 +44,7 @@ jobs:
       - name: Setting up the environment
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu clang xz-utils python-is-python3 zip
 
       - name: Set Build Start Time
         run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
@@ -51,7 +53,7 @@ jobs:
         run: |
           export DEVICE=${{ env.DEVICE }}
           export BUILD=${{ env.BUILD }}
-          ./build.sh
+          ./build-cpullvm23.sh
 
       - name: Set Build End Time
         run: echo "END_TIME=$(date +%s)" >> $GITHUB_ENV
@@ -111,7 +113,7 @@ jobs:
           echo "KERNEL_VERSION=$(cat out/include/config/kernel.release)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +'%d %B %Y')" >> $GITHUB_ENV
           echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "CLANG_VERSION=$(${{ github.workspace }}/tc/clang/bin/clang --version | head -n1)" >> $GITHUB_ENV
+          echo "CLANG_VERSION=$(${{ github.workspace }}/tc/sdclang23/bin/clang --version | head -n1)" >> $GITHUB_ENV
           KSU_VERSION=$(grep -m1 'KSU_VERSION' -r ./KernelSU/kernel/Makefile | sed -E 's/.*KSU_VERSION=([0-9]+).*/\1/')
           [ -z "$KSU_VERSION" ] && KSU_VERSION="Unknown"
           echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV

@@ -31,7 +31,10 @@ done
 
 # ===== AnyKernel3 =====
 AK3_REPO="https://github.com/Lazy-Encrypted/AnyKernel3"
-AK3_BRANCH="oplus"
+AK3_BRANCH="${AK3_BRANCH:-oplus}"
+
+CPULLVM_VERSION="${CPULLVM_VERSION:-23.1.0}"
+CPULLVM_URL="${CPULLVM_URL:-https://github.com/qualcomm/cpullvm-toolchain/releases/download/cpullvm-${CPULLVM_VERSION}/cpullvm-${CPULLVM_VERSION}-Linux-x86_64-Ubuntu24.tar.xz}"
 
 ZIPNAME="tachyon-kernel-$(date '+%Y%m%d')-cpullvm23.zip"
 TC_DIR="${TC_DIR:-$(pwd)/tc/sdclang23}"
@@ -51,10 +54,32 @@ if test -z "$(git rev-parse --show-cdup 2>/dev/null)" &&
     ZIPNAME="tachyon-kernel-$(date '+%Y%m%d')-$(echo "$head" | cut -c1-12)-cpullvm23-$DEVICE.zip"
 fi
 
+if [ ! -e KernelSU/kernel/Makefile ]; then
+    git submodule update --init --recursive
+fi
+
 if ! [ -d "$TC_DIR/bin" ]; then
-    echo -e "${RED}Snapdragon CPULLVM Compiler not found at: $TC_DIR${NC}"
-    echo -e "${YELLOW}Instale o toolchain em $TC_DIR ou exporte TC_DIR=/caminho/para/sdclang23.${NC}"
-    exit 1
+    echo -e "${YELLOW}Qualcomm CPULLVM ${CPULLVM_VERSION} not found at $TC_DIR! Downloading...${NC}"
+    mkdir -p "$TC_DIR"
+    if ! curl -fL "$CPULLVM_URL" | tar -xJ -C "$TC_DIR" --strip-components=1; then
+        echo -e "${RED}Failed to download or extract CPULLVM ${CPULLVM_VERSION}!${NC}"
+        rm -rf "$TC_DIR"
+        exit 1
+    fi
+    echo -e "${GREEN}Qualcomm CPULLVM ${CPULLVM_VERSION} ready!${NC}"
+fi
+
+if ! command -v python >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+    mkdir -p "$(pwd)/bin"
+    ln -sf "$(command -v python3)" "$(pwd)/bin/python"
+fi
+
+if [ -x /usr/bin/clang ] && [ -x /usr/bin/clang++ ]; then
+    HOST_CC=/usr/bin/clang
+    HOST_CXX=/usr/bin/clang++
+else
+    HOST_CC=gcc
+    HOST_CXX=g++
 fi
 
 export PATH="$(pwd)/bin:$TC_DIR/bin:$PATH"
@@ -64,8 +89,8 @@ echo -e "${YELLOW}building with: $DEFCONFIG${NC}"
 
 MAKE_ARGS=(
     -j"$(nproc --all)"
-    HOSTCC=/usr/bin/clang
-    HOSTCXX=/usr/bin/clang++
+    HOSTCC="$HOST_CC"
+    HOSTCXX="$HOST_CXX"
     O=out
     CC=clang
     ARCH=arm64
@@ -83,8 +108,8 @@ MAKE_ARGS=(
     LLVM_IAS=1
 )
 
-make O=out ARCH=arm64 HOSTCC=/usr/bin/clang HOSTCXX=/usr/bin/clang++ CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 $DEFCONFIG
-make O=out ARCH=arm64 HOSTCC=/usr/bin/clang HOSTCXX=/usr/bin/clang++ CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 olddefconfig
+make O=out ARCH=arm64 HOSTCC="$HOST_CC" HOSTCXX="$HOST_CXX" CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 $DEFCONFIG
+make O=out ARCH=arm64 HOSTCC="$HOST_CC" HOSTCXX="$HOST_CXX" CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 olddefconfig
 
 echo -e "\n${YELLOW}Starting compilation...${NC}\n"
 
