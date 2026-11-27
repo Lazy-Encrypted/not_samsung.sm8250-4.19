@@ -1732,12 +1732,11 @@ static int z_erofs_readpage(struct file *file, struct page *page)
 	return z_erofs_read_folio(file, page_folio(page));
 }
 
-static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
-			     struct list_head *pages, unsigned int nr_pages)
+static void z_erofs_readahead(struct readahead_control *rac)
 {
-	struct inode *const inode = mapping->host;
+	struct inode *const inode = rac->mapping->host;
 	struct erofs_sb_info *const sbi = EROFS_I_SB(inode);
-
+	unsigned int nr_pages = readahead_count(rac);
 	bool sync = (sbi->readahead_sync_decompress &&
 			nr_pages <= sbi->max_sync_decompress_pages);
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
@@ -1746,36 +1745,33 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 		sync = true;
 #endif
 	struct z_erofs_decompress_frontend f = DECOMPRESS_FRONTEND_INIT(inode);
-	gfp_t gfp = mapping_gfp_constraint(mapping, GFP_KERNEL);
+	struct folio *folio;
 	struct page *head = NULL;
 	LIST_HEAD(pagepool);
 
-	trace_erofs_readpages(mapping->host, lru_to_page(pages),
-			      nr_pages, false);
+	folio = readahead_folio(rac);
+	if (!folio)
+		return;
 
-	f.headoffset = (erofs_off_t)lru_to_page(pages)->index << PAGE_SHIFT;
+	trace_erofs_readpages(inode, folio_page(folio, 0), nr_pages, false);
 
-	for (; nr_pages; --nr_pages) {
-		struct page *page = lru_to_page(pages);
+	f.headoffset = (erofs_off_t)folio_index(folio) << PAGE_SHIFT;
+
+	do {
+		struct page *page = folio_page(folio, 0);
 
 		prefetchw(&page->flags);
-		list_del(&page->lru);
 
 		/*
 		 * A pure asynchronous readahead is indicated if
 		 * a PG_readahead marked page is hitted at first.
 		 * Let's also do asynchronous decompression for this case.
 		 */
-		sync &= !(PageReadahead(page) && !head);
-
-		if (add_to_page_cache_lru(page, mapping, page->index, gfp)) {
-			list_add(&page->lru, &pagepool);
-			continue;
-		}
+		sync &= !(folio_test_readahead(folio) && !head);
 
 		set_page_private(page, (unsigned long)head);
 		head = page;
-	}
+	} while ((folio = readahead_folio(rac)));
 
 	while (head) {
 		struct page *page = head;
@@ -1801,10 +1797,9 @@ static int z_erofs_readpages(struct file *filp, struct address_space *mapping,
 
 	/* clean up the remaining free pages */
 	erofs_release_pages(&pagepool);
-	return 0;
 }
 
 const struct address_space_operations z_erofs_aops = {
 	.readpage = z_erofs_readpage,
-	.readpages = z_erofs_readpages,
+	.readahead = z_erofs_readahead,
 };

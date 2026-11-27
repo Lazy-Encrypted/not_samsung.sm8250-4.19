@@ -452,47 +452,44 @@ static int erofs_raw_access_readpage(struct file *file, struct page *page)
 	return erofs_raw_access_read_folio(file, page_folio(page));
 }
 
-static int erofs_raw_access_readpages(struct file *filp,
-				      struct address_space *mapping,
-				      struct list_head *pages,
-				      unsigned int nr_pages)
+static void erofs_raw_access_readahead(struct readahead_control *rac)
 {
+	struct address_space *mapping = rac->mapping;
 	erofs_off_t last_block;
 	struct bio *bio = NULL;
-	gfp_t gfp = readahead_gfp_mask(mapping);
-	struct page *page = list_last_entry(pages, struct page, lru);
+	unsigned int nr_pages = readahead_count(rac);
+	struct folio *folio;
 
-	trace_erofs_readpages(mapping->host, page, nr_pages, true);
+	folio = readahead_folio(rac);
+	if (!folio)
+		return;
 
-	for (; nr_pages; --nr_pages) {
-		page = list_entry(pages->prev, struct page, lru);
+	trace_erofs_readpages(mapping->host, folio_page(folio, 0),
+			      nr_pages, true);
+
+	do {
+		struct page *page = folio_page(folio, 0);
 
 		prefetchw(&page->flags);
-		list_del(&page->lru);
+		bio = erofs_read_raw_page(bio, mapping, page,
+					  &last_block, nr_pages--, true);
 
-		if (!add_to_page_cache_lru(page, mapping, page->index, gfp)) {
-			bio = erofs_read_raw_page(bio, mapping, page,
-						  &last_block, nr_pages, true);
+		/* all the page errors are ignored when readahead */
+		if (IS_ERR(bio)) {
+			pr_err("%s, readahead error at page %lu of nid %llu\n",
+			       __func__, page->index,
+			       EROFS_I(mapping->host)->nid);
 
-			/* all the page errors are ignored when readahead */
-			if (IS_ERR(bio)) {
-				pr_err("%s, readahead error at page %lu of nid %llu\n",
-				       __func__, page->index,
-				       EROFS_I(mapping->host)->nid);
-
-				bio = NULL;
-			}
+			bio = NULL;
 		}
 
 		/* pages could still be locked */
-		put_page(page);
-	}
-	DBG_BUGON(!list_empty(pages));
+		folio_put(folio);
+	} while ((folio = readahead_folio(rac)));
 
 	/* the rare case (end in gaps) */
 	if (bio)
 		submit_bio(bio);
-	return 0;
 }
 
 static sector_t erofs_bmap(struct address_space *mapping, sector_t block)
@@ -518,6 +515,6 @@ static sector_t erofs_bmap(struct address_space *mapping, sector_t block)
 /* for uncompressed (aligned) files and raw access for other files */
 const struct address_space_operations erofs_raw_access_aops = {
 	.readpage = erofs_raw_access_readpage,
-	.readpages = erofs_raw_access_readpages,
+	.readahead = erofs_raw_access_readahead,
 	.bmap = erofs_bmap,
 };
