@@ -53,6 +53,8 @@
 
 &msm_gpu {
 	qcom,chipid = <0x06050001>;
+	qcom,enable-ca-jump;
+	qcom,ca-busy-penalty = <4000>;
 
 	/* GPU OPP data */
 	operating-points-v2 = <&gpu_opp_table_v2>;
@@ -72,6 +74,7 @@
 			qcom,speed-bin = <0>;
 			qcom,initial-pwrlevel = <7>;
 			qcom,throttle-pwrlevel = <1>;
+			qcom,ca-target-pwrlevel = <2>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;
@@ -200,6 +203,7 @@
 			qcom,speed-bin = <1>;
 			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
+			qcom,ca-target-pwrlevel = <2>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;
@@ -313,6 +317,7 @@
 			#size-cells = <0>;
 			qcom,speed-bin = <3>;
 			qcom,initial-pwrlevel = <4>;
+			qcom,ca-target-pwrlevel = <1>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;
@@ -399,6 +404,7 @@
 			qcom,speed-bin = <2>;
 			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
+			qcom,ca-target-pwrlevel = <2>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;
@@ -513,6 +519,7 @@
 			qcom,speed-bin = <4>;
 			qcom,initial-pwrlevel = <6>;
 			qcom,throttle-pwrlevel = <1>;
+			qcom,ca-target-pwrlevel = <2>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;

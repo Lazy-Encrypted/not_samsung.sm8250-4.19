@@ -17,6 +17,8 @@
 #include <soc/qcom/scm.h>
 #include <soc/qcom/qtee_shmbridge.h>
 #include <linux/of_platform.h>
+#include <linux/jiffies.h>
+#include <linux/sched_assist.h>
 #include "governor.h"
 
 static DEFINE_SPINLOCK(tz_lock);
@@ -35,10 +37,21 @@ static DEFINE_SPINLOCK(suspend_lock);
 #define MAX_TZ_VERSION		0
 
 /*
- * CEILING is 50msec, larger than any standard
- * frame length, but less than the idle timer.
+ * CEILING is 8msec to catch sustained heavy frames
+ * within 120Hz polling.
  */
-#define CEILING			50000
+#define CEILING			8000
+
+static inline bool adreno_tz_ux_active(void)
+{
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	return sysctl_sched_assist_enabled &&
+		(sysctl_sched_assist_scene &
+		 (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_GPU_COMPOSITION));
+#else
+	return false;
+#endif
+}
 #define TZ_RESET_ID		0x3
 #define TZ_UPDATE_ID		0x4
 #define TZ_INIT_ID		0x6
@@ -662,11 +675,16 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		val = -1 * level;
 	} else {
 		unsigned int refresh_rate = dsi_panel_get_refresh_rate();
+		bool high_rr = refresh_rate > 60;
+		bool ux_active = adreno_tz_ux_active();
+		u64 busy_pct = priv->bin.total_time ?
+			div64_u64((u64)priv->bin.busy_time * 100,
+				  priv->bin.total_time) : 0;
 
 		scm_data[0] = level;
 		scm_data[1] = priv->bin.total_time;
-		if (refresh_rate > 60) {
-			/* Increase GPU load bias for high refresh rates. */
+		if (high_rr || ux_active) {
+			/* Increase GPU load bias for high refresh / blur transitions. */
 			scm_data[2] = priv->bin.busy_time +
 				(priv->bin.busy_time >> 2) +
 				(priv->bin.busy_time >> 3);
@@ -684,15 +702,30 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		}
 
 		/*
-		 * At high refresh rates, ramp up at least one level
-		 * when GPU utilization reaches 50 percent.
-		 * Preserve larger upward decisions from TrustZone.
+		 * TrustZone steps up conservatively (often 1 OPP per 2-3ms poll),
+		 * which delays full clock ramp across heavy 120Hz blur passes.
+		 * Accelerate upward steps proportional to GPU saturation.
 		 */
-		if (refresh_rate > 60 && level > 0 &&
-		    priv->bin.total_time &&
-		    (u64)priv->bin.busy_time * 2 >= priv->bin.total_time &&
-		    val == 0)
-			val = -1;
+		if (level > 0) {
+			if (busy_pct >= 85)
+				val = min_t(int, val, high_rr ? -4 : -3);
+			else if (busy_pct >= 70 || (ux_active && busy_pct >= 55))
+				val = min_t(int, val, -2);
+			else if (busy_pct >= (high_rr ? 45 : 60))
+				val = min_t(int, val, -1);
+		}
+
+		/*
+		 * Briefly resist downward scaling (~40ms) across tiny CPU gaps
+		 * between consecutive blur/animation frames while active.
+		 */
+		if (busy_pct >= 55)
+			priv->ramp_hold_until = jiffies + msecs_to_jiffies(40);
+		if (val > 0 && ((busy_pct >= 30 &&
+				 time_before(jiffies, priv->ramp_hold_until)) ||
+				(ux_active && busy_pct >= 35) ||
+				busy_pct >= 50))
+			val = 0;
 	}
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;

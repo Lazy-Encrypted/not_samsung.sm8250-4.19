@@ -13,12 +13,12 @@
 #include "devfreq_trace.h"
 #include "governor.h"
 
-#define MIN_BUSY                1000
-#define LONG_FLOOR              20000
+#define MIN_BUSY                500
+#define LONG_FLOOR              8000
 #define HIST                    5
-#define TARGET                  80
-#define CAP                     65
-#define WAIT_THRESHOLD          10
+#define TARGET                  65
+#define CAP                     50
+#define WAIT_THRESHOLD          5
 /* AB vote is in multiple of BW_STEP Mega bytes */
 #define BW_STEP                 50
 
