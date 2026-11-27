@@ -3243,8 +3243,13 @@ static void binder_transaction(struct binder_proc *proc,
 	t->is_ux = test_task_ux(current) &&
 		   (!(t->flags & TF_ONE_WAY) || sysctl_oplus_binder_async_ux_enable);
 #endif
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if ((!(t->flags & TF_ONE_WAY) || (t->is_ux && sysctl_oplus_binder_async_ux_enable)) &&
+	    binder_supported_policy(current->policy)) {
+#else
 	if (!(t->flags & TF_ONE_WAY) &&
 	    binder_supported_policy(current->policy)) {
+#endif
 		/* Inherit supported policies for synchronous transactions */
 		t->priority.sched_policy = current->policy;
 		t->priority.prio = current->normal_prio;
