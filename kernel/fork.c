@@ -81,6 +81,7 @@
 #include <linux/fs_struct.h>
 #include <linux/magic.h>
 #include <linux/sched/mm.h>
+#include <linux/sched_assist.h>
 #include <linux/perf_event.h>
 #include <linux/posix-timers.h>
 #include <linux/user-return-notifier.h>
@@ -2045,6 +2046,7 @@ static __latent_entropy struct task_struct *copy_process(
 	p->ux_state = 0;
 	p->ux_im_flag = 0;
 	p->ux_depth = 0;
+	sched_assist_tag_comm(p);
 #endif
 
 	/* Perform scheduler related setup. Assign this task to a CPU. */

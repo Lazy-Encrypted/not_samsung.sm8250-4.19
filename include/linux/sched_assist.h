@@ -21,6 +21,7 @@ struct task_struct;
 #define SA_TYPE_ONCE_UX  (1 << 9)
 #define SA_TYPE_ID_CAMERA_PROVIDER  (1 << 10)
 #define SA_TYPE_ID_ALLOCATOR_SER    (1 << 11)
+#define SA_TYPE_AUTO                (1 << 12)
 
 #define SCHED_ASSIST_UX_MASK (0xFF)
 
@@ -70,8 +71,10 @@ extern int sched_assist_scene_sysctl_handler(struct ctl_table *table, int write,
 
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
 bool test_task_ux(struct task_struct *task);
+void sched_assist_tag_comm(struct task_struct *task);
 #else
 static inline bool test_task_ux(struct task_struct *task) { return false; }
+static inline void sched_assist_tag_comm(struct task_struct *task) { }
 #endif
 
 #endif /* _LINUX_SCHED_ASSIST_H */

@@ -82,6 +82,34 @@ EXPORT_SYMBOL(sysctl_oplus_iowait_skip_min_enabled);
 static char tpd_cmds_buf[128] = "";
 static int tpd_id_val = 0;
 
+void sched_assist_tag_comm(struct task_struct *task)
+{
+	if (!task || !task->comm[0])
+		return;
+
+	if (!strcmp(task->comm, "surfaceflinger") ||
+	    !strcmp(task->comm, "RenderEngine")) {
+		task->ux_im_flag = IM_FLAG_SURFACEFLINGER;
+		task->ux_state |= SA_TYPE_ANIMATOR | SA_TYPE_AUTO;
+	} else if (!strcmp(task->comm, "RenderThread")) {
+		task->ux_state |= SA_TYPE_ANIMATOR | SA_TYPE_AUTO;
+	} else if (strstr(task->comm, "composer")) {
+		task->ux_im_flag = IM_FLAG_HWC;
+		task->ux_state |= SA_TYPE_AUTO;
+	} else if (!strcmp(task->comm, "system_server") ||
+		   strstr(task->comm, "launcher")) {
+		task->ux_im_flag = IM_FLAG_LAUNCHER;
+		task->ux_state |= SA_TYPE_HEAVY | SA_TYPE_AUTO;
+	} else if (task->ux_state & SA_TYPE_AUTO) {
+		task->ux_state &= ~(SA_TYPE_HEAVY | SA_TYPE_ANIMATOR | SA_TYPE_AUTO);
+		if (task->ux_im_flag == IM_FLAG_SURFACEFLINGER ||
+		    task->ux_im_flag == IM_FLAG_HWC ||
+		    task->ux_im_flag == IM_FLAG_LAUNCHER)
+			task->ux_im_flag = 0;
+	}
+}
+EXPORT_SYMBOL(sched_assist_tag_comm);
+
 /* UX task identification for block UXIO and scheduler */
 bool test_task_ux(struct task_struct *task)
 {
@@ -99,30 +127,6 @@ bool test_task_ux(struct task_struct *task)
 	    task->ux_im_flag == IM_FLAG_LAUNCHER ||
 	    task->ux_im_flag == IM_FLAG_LAUNCHER_NON_UX_RENDER)
 		return true;
-
-	/* Dynamic detection for Android / One UI tasks if no OPlus userspace daemon is running */
-	if (task->comm[0]) {
-		if (!strcmp(task->comm, "surfaceflinger") ||
-		    !strcmp(task->comm, "RenderEngine")) {
-			task->ux_im_flag = IM_FLAG_SURFACEFLINGER;
-			task->ux_state |= SA_TYPE_ANIMATOR;
-			return true;
-		}
-		if (!strcmp(task->comm, "RenderThread")) {
-			task->ux_state |= SA_TYPE_ANIMATOR;
-			return true;
-		}
-		if (strstr(task->comm, "composer")) {
-			task->ux_im_flag = IM_FLAG_HWC;
-			return true;
-		}
-		if (!strcmp(task->comm, "system_server") ||
-		    strstr(task->comm, "launcher")) {
-			task->ux_im_flag = IM_FLAG_LAUNCHER;
-			task->ux_state |= SA_TYPE_HEAVY;
-			return true;
-		}
-	}
 
 	return false;
 }
