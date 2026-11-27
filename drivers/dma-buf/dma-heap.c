@@ -298,7 +298,7 @@ EXPORT_SYMBOL_GPL(dma_heap_get_name);
 struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 {
 	struct dma_heap *heap, *err_ret;
-	unsigned int minor;
+	u32 minor = 0;
 	int ret;
 
 	if (!exp_info->name || !strcmp(exp_info->name, "")) {
@@ -330,8 +330,8 @@ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 	heap->priv = exp_info->priv;
 
 	/* Find unused minor number */
-	ret = xa_alloc(&dma_heap_minors, &minor, heap,
-		       XA_LIMIT(0, NUM_HEAP_MINORS - 1), GFP_KERNEL);
+	ret = xa_alloc(&dma_heap_minors, &minor, NUM_HEAP_MINORS - 1, heap,
+		       GFP_KERNEL);
 	if (ret < 0) {
 		pr_err("dma_heap: Unable to get minor number for heap\n");
 		err_ret = ERR_PTR(ret);
@@ -353,6 +353,7 @@ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 				       NULL,
 				       heap->heap_devt,
 				       NULL,
+				       "%s",
 				       heap->name);
 	if (IS_ERR(heap->heap_dev)) {
 		pr_err("dma_heap: Unable to create device\n");
