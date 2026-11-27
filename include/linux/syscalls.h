@@ -428,8 +428,12 @@ asmlinkage long sys_fchmodat(int dfd, const char __user * filename,
 asmlinkage long sys_fchownat(int dfd, const char __user *filename, uid_t user,
 			     gid_t group, int flag);
 asmlinkage long sys_fchown(unsigned int fd, uid_t user, gid_t group);
+struct open_how;
+
 asmlinkage long sys_openat(int dfd, const char __user *filename, int flags,
 			   umode_t mode);
+asmlinkage long sys_openat2(int dfd, const char __user *filename,
+			    struct open_how __user *how, size_t size);
 asmlinkage long sys_close(unsigned int fd);
 asmlinkage long sys_close_range(unsigned int fd, unsigned int max_fd,
 				unsigned int flags);
@@ -867,6 +871,7 @@ asmlinkage long sys_clock_adjtime(clockid_t which_clock,
 asmlinkage long sys_syncfs(int fd);
 asmlinkage long sys_setns(int fd, int nstype);
 asmlinkage long sys_pidfd_open(pid_t pid, unsigned int flags);
+asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
 asmlinkage long sys_sendmmsg(int fd, struct mmsghdr __user *msg,
 			     unsigned int vlen, unsigned flags);
 asmlinkage long sys_process_vm_readv(pid_t pid,

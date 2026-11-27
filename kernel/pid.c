@@ -42,6 +42,9 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/idr.h>
+#include <linux/file.h>
+#include <linux/ptrace.h>
+#include <linux/security.h>
 
 struct pid init_struct_pid = {
 	.count 		= ATOMIC_INIT(1),
@@ -581,6 +584,74 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 	fd = ret ?: pidfd_create(p);
 	put_pid(p);
 	return fd;
+}
+
+static int pidfd_getfd_task(struct task_struct *task, int fd)
+{
+	struct file *file;
+	int ret;
+
+	if (!ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS))
+		return -EPERM;
+
+	file = fget_task(task, fd);
+	if (!file)
+		return -EBADF;
+
+	ret = security_file_receive(file);
+	if (ret) {
+		fput(file);
+		return ret;
+	}
+
+	ret = get_unused_fd_flags(O_CLOEXEC);
+	if (ret < 0) {
+		fput(file);
+		return ret;
+	}
+
+	fd_install(ret, file);
+	return ret;
+}
+
+/**
+ * sys_pidfd_getfd() - Get a file descriptor from another process
+ *
+ * @pidfd:	the pidfd file descriptor of the process
+ * @fd:		the file descriptor number to get
+ * @flags:	flags on how to get the fd (reserved)
+ *
+ * This function gets a copy of a file descriptor from another process based
+ * on the pidfd and file descriptor number. It requires that the calling
+ * process has the ability to ptrace the process represented by the pidfd.
+ * If the process is using O_CLOEXEC it will be forced on the new fd.
+ *
+ * Return: On success, a cloexec file descriptor is returned.
+ *         On error, a negative errno number will be returned.
+ */
+SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
+{
+	struct pid *pid;
+	struct task_struct *task;
+	unsigned int f_flags;
+	int ret;
+
+	if (flags)
+		return -EINVAL;
+
+	pid = pidfd_get_pid(pidfd, &f_flags);
+	if (IS_ERR(pid))
+		return PTR_ERR(pid);
+
+	task = get_pid_task(pid, PIDTYPE_PID);
+	put_pid(pid);
+	if (!task)
+		return -ESRCH;
+
+	ret = pidfd_getfd_task(task, fd);
+	put_task_struct(task);
+
+	return ret;
 }
 
 void __init pid_idr_init(void)
