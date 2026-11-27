@@ -372,6 +372,8 @@ static void __fput(struct file *file)
 		__mnt_drop_write(mnt);
 	}
 	dput(dentry);
+	if (unlikely(file->f_mode & FMODE_NEED_UNMOUNT))
+		dissolve_on_fput(mnt);
 	mntput(mnt);
 	fput_watchdog_clear(&wd);
 out:

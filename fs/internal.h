@@ -83,11 +83,18 @@ int do_linkat(int olddfd, const char __user *oldname, int newdfd,
 	      const char __user *newname, int flags);
 
 /*
+ * fsopen.c
+ */
+extern const struct file_operations fscontext_fops;
+
+/*
  * namespace.c
  */
 extern void *copy_mount_options(const void __user *);
 extern char *copy_mount_string(const void __user *);
 
+extern bool may_mount(void);
+extern void dissolve_on_fput(struct vfsmount *);
 extern struct vfsmount *lookup_mnt(const struct path *);
 extern int finish_automount(struct vfsmount *, struct path *);
 

@@ -171,6 +171,9 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* File does not contribute to nr_files count */
 #define FMODE_NOACCOUNT	((__force fmode_t)0x20000000)
 
+/* Detached mount that needs dissolving on __fput */
+#define FMODE_NEED_UNMOUNT	((__force fmode_t)0x40000000)
+
 /*
  * Flag for rw_copy_check_uvector and compat_rw_copy_check_uvector
  * that indicates that they should check the contents of the iovec are

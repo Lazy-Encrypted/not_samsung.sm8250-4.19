@@ -95,6 +95,7 @@
 #define AT_SYMLINK_FOLLOW	0x400   /* Follow symbolic links.  */
 #define AT_NO_AUTOMOUNT		0x800	/* Suppress terminal automount traversal */
 #define AT_EMPTY_PATH		0x1000	/* Allow empty relative pathname */
+#define AT_RECURSIVE		0x8000	/* Apply to the entire subtree */
 
 #define AT_STATX_SYNC_TYPE	0x6000	/* Type of synchronisation required from statx() */
 #define AT_STATX_SYNC_AS_STAT	0x0000	/* - Do whatever stat() does */
