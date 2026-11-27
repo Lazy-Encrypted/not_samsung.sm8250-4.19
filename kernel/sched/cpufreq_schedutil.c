@@ -318,9 +318,14 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 	if (next_freq == sg_policy->next_freq)
 		return false;
 
-	if (next_freq > sg_policy->next_freq &&
-	    (time - sg_policy->last_freq_update_time) < sg_policy->up_delay_ns)
-		return false;
+	if (next_freq > sg_policy->next_freq) {
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+		if (sysctl_sched_assist_scene)
+			goto must_update;
+#endif
+		if ((time - sg_policy->last_freq_update_time) < sg_policy->up_delay_ns)
+			return false;
+	}
 
 	if (next_freq < sg_policy->next_freq &&
 	    (time - sg_policy->last_freq_update_time) < sg_policy->down_delay_ns) {
@@ -384,12 +389,21 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 
 #if defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
 	if (sysctl_sched_assist_scene && tachyon_validate_integrity() == TACHYON_MAGIC) {
-		if (policy->cpu == 4 && freq < 1382400)
-			freq = 1382400;
-		else if (policy->cpu == 7 && freq < 1401600)
-			freq = 1401600;
-		else if (policy->cpu == 0 && freq < 1171200)
-			freq = 1171200;
+		if (sysctl_sched_assist_scene & (SA_LAUNCH | SA_ANIM | SA_ANIM_START)) {
+			if (policy->cpu == 7 && freq < 2169600)
+				freq = 2169600;
+			else if (policy->cpu == 4 && freq < 1862400)
+				freq = 1862400;
+			else if (policy->cpu == 0 && freq < 1344000)
+				freq = 1344000;
+		} else {
+			if (policy->cpu == 7 && freq < 1632000)
+				freq = 1632000;
+			else if (policy->cpu == 4 && freq < 1574400)
+				freq = 1574400;
+			else if (policy->cpu == 0 && freq < 1248000)
+				freq = 1248000;
+		}
 	}
 #endif
 
@@ -581,10 +595,12 @@ static void sugov_get_util(struct sugov_cpu *sg_cpu, unsigned long boost)
 				unsigned long ux_floor;
 
 				if (sysctl_sched_assist_scene &
-				    (SA_LAUNCH | SA_ANIM_START | SA_ANIM | SA_SLIDE | SA_INPUT))
+				    (SA_LAUNCH | SA_ANIM_START | SA_ANIM))
+					ux_floor = (cap * 85) / 100;
+				else if (sysctl_sched_assist_scene & (SA_SLIDE | SA_INPUT))
 					ux_floor = (cap * 75) / 100;
 				else
-					ux_floor = (cap * 55) / 100;
+					ux_floor = (cap * 60) / 100;
 
 				if (max && ux_floor > max)
 					ux_floor = max;
