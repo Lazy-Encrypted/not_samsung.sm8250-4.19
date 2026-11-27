@@ -24,10 +24,10 @@ static DEFINE_SPINLOCK(sample_lock);
 static DEFINE_SPINLOCK(sample_load_lock);
 static DEFINE_SPINLOCK(suspend_lock);
 /*
- * FLOOR is 5msec to capture up to 3 re-draws
- * per frame for 60fps content.
+ * FLOOR is 2msec to capture redraws
+ * per frame for 120Hz content.
  */
-#define FLOOR		        4000
+#define FLOOR		        2000
 /*
  * MIN_BUSY is 1 msec for the sample to be sent
  */

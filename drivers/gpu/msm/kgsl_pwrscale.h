@@ -9,8 +9,8 @@
 #include <linux/msm_adreno_devfreq.h>
 #include "kgsl_pwrctrl.h"
 
-/* devfreq governor call window in usec */
-#define KGSL_GOVERNOR_CALL_INTERVAL 4000
+/* devfreq governor call window in usec (optimized for 120Hz display) */
+#define KGSL_GOVERNOR_CALL_INTERVAL 2000
 
 /* Power events to be tracked with history */
 #define KGSL_PWREVENT_STATE	0

@@ -724,8 +724,8 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 
 	profile->initial_freq =
 		pwr->pwrlevels[pwr->num_pwrlevels - 1].gpu_freq;
-	/* Keep devfreq polling aligned with the KGSL update window. */
-	profile->polling_ms = 5;
+	/* Keep devfreq polling aligned with the KGSL update window (3ms for 120Hz). */
+	profile->polling_ms = 3;
 
 	/* do not include the 'off' level or duplicate freq. levels */
 	for (i = 0; i < (pwr->num_pwrlevels - 1); i++)

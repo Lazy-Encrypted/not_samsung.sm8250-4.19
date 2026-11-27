@@ -23,6 +23,8 @@ DEFINE_PER_CPU_READ_MOSTLY(unsigned long, response_time_mult);
 struct sugov_tunables {
 	struct gov_attr_set	attr_set;
 	unsigned int		rate_limit_us;
+	unsigned int		up_rate_limit_us;
+	unsigned int		down_rate_limit_us;
 	unsigned int		response_time_ms;
 };
 
@@ -35,6 +37,8 @@ struct sugov_policy {
 	raw_spinlock_t		update_lock;
 	u64			last_freq_update_time;
 	s64			freq_update_delay_ns;
+	s64			up_delay_ns;
+	s64			down_delay_ns;
 	unsigned int		freq_response_time_ms;
 	unsigned int		next_freq;
 	unsigned int		cached_raw_freq;
@@ -117,13 +121,18 @@ static void sugov_update_rate_limit_us(struct sugov_policy *sg_policy)
 {
         sg_policy->freq_update_delay_ns =
                 (s64)sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
+        sg_policy->up_delay_ns =
+                (s64)sg_policy->tunables->up_rate_limit_us * NSEC_PER_USEC;
+        sg_policy->down_delay_ns =
+                (s64)sg_policy->tunables->down_rate_limit_us * NSEC_PER_USEC;
 }
 
 static bool sugov_should_rate_limit(struct sugov_policy *sg_policy, u64 time)
 {
 	s64 delta_ns = time - sg_policy->last_freq_update_time;
+	s64 min_delay = min(sg_policy->up_delay_ns, sg_policy->down_delay_ns);
 
-	return delta_ns < sg_policy->freq_update_delay_ns;
+	return delta_ns < min_delay;
 }
 
 static inline u64 sugov_calc_freq_response_ms(struct sugov_policy *sg_policy)
@@ -309,8 +318,12 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 	if (next_freq == sg_policy->next_freq)
 		return false;
 
+	if (next_freq > sg_policy->next_freq &&
+	    (time - sg_policy->last_freq_update_time) < sg_policy->up_delay_ns)
+		return false;
+
 	if (next_freq < sg_policy->next_freq &&
-	    sugov_should_rate_limit(sg_policy, time)) {
+	    (time - sg_policy->last_freq_update_time) < sg_policy->down_delay_ns) {
 		/* The raw target was resolved, but its frequency was not accepted. */
 		sg_policy->cached_raw_freq = CPUFREQ_ENTRY_INVALID;
 		return false;
@@ -928,6 +941,8 @@ rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count
                 return -EINVAL;
 
         tunables->rate_limit_us = rate_limit_us;
+        tunables->up_rate_limit_us = rate_limit_us;
+        tunables->down_rate_limit_us = rate_limit_us;
 
         list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
                 sugov_update_rate_limit_us(sg_policy);
@@ -936,6 +951,60 @@ rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count
 }
 
 static struct governor_attr rate_limit_us = __ATTR_RW(rate_limit_us);
+
+static ssize_t up_rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return sysfs_emit(buf, "%u\n", tunables->up_rate_limit_us);
+}
+
+static ssize_t
+up_rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+	struct sugov_policy *sg_policy;
+	unsigned int rate_limit_us;
+
+	if (kstrtouint(buf, 10, &rate_limit_us))
+		return -EINVAL;
+
+	tunables->up_rate_limit_us = rate_limit_us;
+
+	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
+		sugov_update_rate_limit_us(sg_policy);
+
+	return count;
+}
+
+static struct governor_attr up_rate_limit_us = __ATTR_RW(up_rate_limit_us);
+
+static ssize_t down_rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return sysfs_emit(buf, "%u\n", tunables->down_rate_limit_us);
+}
+
+static ssize_t
+down_rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+	struct sugov_policy *sg_policy;
+	unsigned int rate_limit_us;
+
+	if (kstrtouint(buf, 10, &rate_limit_us))
+		return -EINVAL;
+
+	tunables->down_rate_limit_us = rate_limit_us;
+
+	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
+		sugov_update_rate_limit_us(sg_policy);
+
+	return count;
+}
+
+static struct governor_attr down_rate_limit_us = __ATTR_RW(down_rate_limit_us);
 
 static ssize_t response_time_ms_show(struct gov_attr_set *attr_set, char *buf)
 {
@@ -972,6 +1041,8 @@ static struct governor_attr response_time_ms = __ATTR_RW(response_time_ms);
 
 static struct attribute *sugov_attrs[] = {
 	&rate_limit_us.attr,
+	&up_rate_limit_us.attr,
+	&down_rate_limit_us.attr,
 	&response_time_ms.attr,
 	NULL
 };
@@ -1139,8 +1210,10 @@ static int sugov_init(struct cpufreq_policy *policy)
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
 
-	tunables->rate_limit_us =
-		(policy->cpu == 4 || policy->cpu == 7) ? 4000 : 1000;
+	tunables->up_rate_limit_us = 500;
+	tunables->down_rate_limit_us =
+		(policy->cpu == 4 || policy->cpu == 7) ? 4000 : 2000;
+	tunables->rate_limit_us = tunables->down_rate_limit_us;
 	if (policy->cpu == 0)
 		tunables->response_time_ms = 4;
 	else if (policy->cpu == 4)
