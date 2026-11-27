@@ -218,6 +218,10 @@ struct page {
 #endif
 } _struct_page_alignment;
 
+struct folio {
+	struct page page;
+};
+
 #define PAGE_FRAG_CACHE_MAX_SIZE	__ALIGN_MASK(32768, ~PAGE_MASK)
 #define PAGE_FRAG_CACHE_MAX_ORDER	get_order(PAGE_FRAG_CACHE_MAX_SIZE)
 

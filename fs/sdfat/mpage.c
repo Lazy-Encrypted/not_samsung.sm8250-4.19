@@ -418,6 +418,7 @@ static void __write_boundary_block(struct block_device *bdev,
 #define sdfat_buffer_heads_over_limit	(0)
 #endif
 
+#undef page_folio
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
 #define page_folio(p)	(p)
 #endif

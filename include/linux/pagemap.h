@@ -689,4 +689,6 @@ static inline unsigned long dir_pages(struct inode *inode)
 			       PAGE_SHIFT;
 }
 
+#include <linux/folio.h>
+
 #endif /* _LINUX_PAGEMAP_H */
