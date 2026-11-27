@@ -113,4 +113,16 @@ static inline struct folio *read_cache_folio(struct address_space *mapping,
 	return page_folio(page);
 }
 
+static inline struct folio *read_cache_folio_gfp(struct address_space *mapping,
+						 pgoff_t index,
+						 gfp_t gfp)
+{
+	struct page *page = read_cache_page_gfp(mapping, index, gfp);
+
+	if (IS_ERR(page))
+		return ERR_CAST(page);
+
+	return page_folio(page);
+}
+
 #endif /* _LINUX_FOLIO_H */
