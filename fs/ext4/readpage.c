@@ -401,6 +401,16 @@ int ext4_mpage_readpages(struct address_space *mapping,
 		if (rac)
 			put_page(page);
 	}
+	if (rac) {
+		while (readahead_count(rac)) {
+			struct folio *folio = readahead_folio(rac);
+
+			if (folio) {
+				unlock_page(folio_page(folio, 0));
+				folio_put(folio);
+			}
+		}
+	}
 	if (bio)
 		submit_bio(bio);
 	return 0;

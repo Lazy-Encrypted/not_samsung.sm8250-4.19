@@ -2644,6 +2644,16 @@ next_page:
 		}
 #endif
 	}
+	if (rac) {
+		while (readahead_count(rac)) {
+			struct folio *folio = readahead_folio(rac);
+
+			if (folio) {
+				unlock_page(folio_page(folio, 0));
+				folio_put(folio);
+			}
+		}
+	}
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	if (f2fs_compressed_file(inode) && !f2fs_cluster_is_empty(&cc)) {
 		ret = f2fs_read_multi_pages(&cc, &bio, max_nr_pages,

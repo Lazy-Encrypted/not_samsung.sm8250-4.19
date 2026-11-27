@@ -751,6 +751,8 @@ static inline struct page *readahead_page(struct readahead_control *rac)
 	}
 
 	page = xa_load(&rac->mapping->i_pages, rac->_index);
+	if (xa_is_value(page))
+		page = NULL;
 	VM_BUG_ON_PAGE(page && !PageLocked(page), page);
 	rac->_batch_count = page ? (1U << compound_order(page)) : 1;
 
