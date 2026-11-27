@@ -53,6 +53,9 @@
 #include <linux/bug.h>
 #include <linux/delay.h>
 #include <linux/kvm_para.h>
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+#include <linux/sched_assist.h>
+#endif
 
 #include "workqueue_internal.h"
 
@@ -1336,7 +1339,14 @@ static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
 
 	/* we own @work, set data and link */
 	set_work_pwq(work, pwq, extra_flags);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	if (test_task_ux(current))
+		list_add(&work->entry, head);
+	else
+		list_add_tail(&work->entry, head);
+#else
 	list_add_tail(&work->entry, head);
+#endif
 	get_pwq(pwq);
 
 	/*
