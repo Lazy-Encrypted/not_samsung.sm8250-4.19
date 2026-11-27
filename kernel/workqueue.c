@@ -1332,21 +1332,18 @@ fail:
  * CONTEXT:
  * spin_lock_irq(pool->lock).
  */
-static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
-			struct list_head *head, unsigned int extra_flags)
+static void __insert_work(struct pool_workqueue *pwq, struct work_struct *work,
+			  struct list_head *head, unsigned int extra_flags,
+			  bool at_head)
 {
 	struct worker_pool *pool = pwq->pool;
 
 	/* we own @work, set data and link */
 	set_work_pwq(work, pwq, extra_flags);
-#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-	if (test_task_ux(current))
+	if (at_head)
 		list_add(&work->entry, head);
 	else
 		list_add_tail(&work->entry, head);
-#else
-	list_add_tail(&work->entry, head);
-#endif
 	get_pwq(pwq);
 
 	/*
@@ -1358,6 +1355,12 @@ static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
 
 	if (__need_more_worker(pool))
 		wake_up_worker(pool);
+}
+
+static void insert_work(struct pool_workqueue *pwq, struct work_struct *work,
+			struct list_head *head, unsigned int extra_flags)
+{
+	__insert_work(pwq, work, head, extra_flags, false);
 }
 
 /*
@@ -1509,7 +1512,15 @@ retry:
 	}
 
 	debug_work_activate(work);
+#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+	__insert_work(pwq, work, worklist, work_flags,
+		      !(work_flags & WORK_STRUCT_DELAYED) &&
+		      pwq->max_active > 1 &&
+		      !(pwq->wq->flags & __WQ_ORDERED) &&
+		      test_task_ux(current));
+#else
 	insert_work(pwq, work, worklist, work_flags);
+#endif
 
 	spin_unlock(&pwq->pool->lock);
 }
