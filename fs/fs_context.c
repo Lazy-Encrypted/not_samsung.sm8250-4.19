@@ -264,6 +264,7 @@ static struct fs_context *alloc_fs_context(struct file_system_type *fs_type,
 	if (!fc)
 		return ERR_PTR(-ENOMEM);
 
+	mutex_init(&fc->uapi_mutex);
 	fc->purpose	= purpose;
 	fc->sb_flags	= sb_flags;
 	fc->sb_flags_mask = sb_flags_mask;
@@ -274,14 +275,17 @@ static struct fs_context *alloc_fs_context(struct file_system_type *fs_type,
 	switch (purpose) {
 	case FS_CONTEXT_FOR_MOUNT:
 		fc->user_ns = get_user_ns(fc->cred->user_ns);
+		fc->phase = FS_CONTEXT_CREATE_PARAMS;
 		break;
 	case FS_CONTEXT_FOR_SUBMOUNT:
 		fc->user_ns = get_user_ns(reference->d_sb->s_user_ns);
+		fc->phase = FS_CONTEXT_CREATE_PARAMS;
 		break;
 	case FS_CONTEXT_FOR_RECONFIGURE:
 		atomic_inc(&reference->d_sb->s_active);
 		fc->user_ns = get_user_ns(reference->d_sb->s_user_ns);
 		fc->root = dget(reference);
+		fc->phase = FS_CONTEXT_RECONF_PARAMS;
 		break;
 	}
 

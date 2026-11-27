@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/security.h>
+#include <linux/mutex.h>
 
 struct cred;
 struct dentry;
@@ -63,6 +64,16 @@ struct fs_parameter {
 	int	dirfd;
 };
 
+enum fs_context_phase {
+	FS_CONTEXT_CREATE_PARAMS,	/* Applying configuration parameters */
+	FS_CONTEXT_CREATING,		/* Awaiting creation */
+	FS_CONTEXT_AWAITING_MOUNT,	/* Awaiting mounting */
+	FS_CONTEXT_AWAITING_REMOUNT,	/* Awaiting remount */
+	FS_CONTEXT_RECONF_PARAMS,	/* Applying remount configuration parameters */
+	FS_CONTEXT_RECONFIGURING,	/* Reconfiguring */
+	FS_CONTEXT_FAILED,		/* Failed to correctly configure */
+};
+
 /*
  * Filesystem context for holding the parameters used in the creation or
  * reconfiguration of a superblock.
@@ -74,6 +85,7 @@ struct fs_parameter {
  */
 struct fs_context {
 	const struct fs_context_operations *ops;
+	struct mutex		uapi_mutex;	/* Userspace access mutex */
 	struct file_system_type	*fs_type;
 	void			*fs_private;	/* The filesystem's context */
 	void			*sget_key;
@@ -89,6 +101,7 @@ struct fs_context {
 	unsigned int		s_iflags;	/* OR'd with sb->s_iflags */
 	unsigned int		lsm_flags;	/* Information flags from the fs to the LSM */
 	enum fs_context_purpose	purpose:8;
+	enum fs_context_phase	phase:8;	/* The phase the context is in */
 	bool			need_free:1;	/* Need to call ops->free() */
 	bool			global:1;	/* Goes into &init_user_ns */
 	bool			oldapi:1;	/* Coming from mount(2) */
