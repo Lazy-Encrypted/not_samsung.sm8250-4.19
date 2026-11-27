@@ -359,12 +359,15 @@ typedef struct {
 	int error;
 } read_descriptor_t;
 
+struct readahead_control;
+
 typedef int (*read_actor_t)(read_descriptor_t *, struct page *,
 		unsigned long, unsigned long);
 
 struct address_space_operations {
 	int (*writepage)(struct page *page, struct writeback_control *wbc);
 	int (*readpage)(struct file *, struct page *);
+	void (*readahead)(struct readahead_control *);
 
 	/* Write back some dirty pages from this mapping. */
 	int (*writepages)(struct address_space *, struct writeback_control *);

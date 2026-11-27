@@ -144,6 +144,79 @@ out:
 	return ret;
 }
 
+static void read_pages_ra(struct readahead_control *rac)
+{
+	struct blk_plug plug;
+	struct folio *folio;
+
+	if (!readahead_count(rac))
+		return;
+
+	blk_start_plug(&plug);
+	rac->mapping->a_ops->readahead(rac);
+	/* Release caller refs for any unconsumed pages in the batch */
+	while ((folio = readahead_folio(rac)))
+		folio_put(folio);
+	blk_finish_plug(&plug);
+}
+
+unsigned int page_cache_ra_unbounded(struct readahead_control *ractl,
+		unsigned long nr_to_read, unsigned long lookahead_size)
+{
+	struct address_space *mapping = ractl->mapping;
+	struct inode *inode = mapping->host;
+	unsigned long index = readahead_index(ractl);
+	loff_t isize = i_size_read(inode);
+	gfp_t gfp_mask = readahead_gfp_mask(mapping);
+	unsigned long end_index;
+	unsigned int total_read = 0;
+	unsigned long i;
+
+	if (isize == 0)
+		return 0;
+
+	end_index = ((isize - 1) >> PAGE_SHIFT);
+
+	for (i = 0; i < nr_to_read; i++) {
+		pgoff_t page_offset = index + i;
+		struct page *page;
+
+		if (page_offset > end_index)
+			break;
+
+		page = xa_load(&mapping->i_pages, page_offset);
+		if (page && !xa_is_value(page)) {
+			total_read += ractl->_nr_pages;
+			read_pages_ra(ractl);
+			ractl->_index = page_offset + 1;
+			continue;
+		}
+
+		page = __page_cache_alloc(gfp_mask);
+		if (!page)
+			break;
+
+		if (add_to_page_cache_lru(page, mapping, page_offset, gfp_mask)) {
+			put_page(page);
+			total_read += ractl->_nr_pages;
+			read_pages_ra(ractl);
+			ractl->_index = page_offset + 1;
+			continue;
+		}
+
+		if (i == nr_to_read - lookahead_size)
+			SetPageReadahead(page);
+
+		ractl->_nr_pages++;
+	}
+
+	total_read += ractl->_nr_pages;
+	read_pages_ra(ractl);
+
+	return total_read;
+}
+EXPORT_SYMBOL_GPL(page_cache_ra_unbounded);
+
 /*
  * __do_page_cache_readahead() actually reads a chunk of disk.  It allocates
  * the pages first, then submits them for I/O. This avoids the very bad
@@ -164,6 +237,13 @@ unsigned int __do_page_cache_readahead(struct address_space *mapping,
 	unsigned int nr_pages = 0;
 	loff_t isize = i_size_read(inode);
 	gfp_t gfp_mask = readahead_gfp_mask(mapping);
+
+	if (mapping->a_ops->readahead) {
+		DEFINE_READAHEAD(ractl, filp, filp ? &filp->f_ra : NULL,
+				 mapping, offset);
+		return page_cache_ra_unbounded(&ractl, nr_to_read,
+					       lookahead_size);
+	}
 
 	if (isize == 0)
 		goto out;
@@ -226,7 +306,8 @@ int force_page_cache_readahead(struct address_space *mapping, struct file *filp,
 	struct file_ra_state *ra = &filp->f_ra;
 	unsigned long max_pages;
 
-	if (unlikely(!mapping->a_ops->readpage && !mapping->a_ops->readpages))
+	if (unlikely(!mapping->a_ops->readpage && !mapping->a_ops->readpages &&
+		     !mapping->a_ops->readahead))
 		return -EINVAL;
 
 	/*

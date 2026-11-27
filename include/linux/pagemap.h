@@ -689,6 +689,81 @@ static inline unsigned long dir_pages(struct inode *inode)
 			       PAGE_SHIFT;
 }
 
+/**
+ * struct readahead_control - Describes a readahead request.
+ * @file: The file, used primarily by network filesystems for authentication.
+ *        May be NULL if invoked internally by the filesystem.
+ * @mapping: Readahead this filesystem object.
+ * @ra: File readahead state.  May be NULL.
+ */
+struct readahead_control {
+	struct file *file;
+	struct address_space *mapping;
+	struct file_ra_state *ra;
+	/* private: use the readahead_* accessors instead */
+	pgoff_t _index;
+	unsigned int _nr_pages;
+	unsigned int _batch_count;
+};
+
+#define DEFINE_READAHEAD(ractl, f, r, m, i)				\
+	struct readahead_control ractl = {				\
+		.file = f,						\
+		.mapping = m,						\
+		.ra = r,						\
+		._index = i,						\
+	}
+
+unsigned int page_cache_ra_unbounded(struct readahead_control *ractl,
+		unsigned long nr_to_read, unsigned long lookahead_size);
+
+static inline unsigned int readahead_count(struct readahead_control *rac)
+{
+	return rac->_nr_pages;
+}
+
+static inline pgoff_t readahead_index(struct readahead_control *rac)
+{
+	return rac->_index;
+}
+
+static inline loff_t readahead_pos(struct readahead_control *rac)
+{
+	return (loff_t)rac->_index * PAGE_SIZE;
+}
+
+static inline loff_t readahead_length(struct readahead_control *rac)
+{
+	return (loff_t)rac->_nr_pages * PAGE_SIZE;
+}
+
+static inline struct page *readahead_page(struct readahead_control *rac)
+{
+	struct page *page;
+
+	BUG_ON(rac->_batch_count > rac->_nr_pages);
+	rac->_nr_pages -= rac->_batch_count;
+	rac->_index += rac->_batch_count;
+
+	if (!rac->_nr_pages) {
+		rac->_batch_count = 0;
+		return NULL;
+	}
+
+	page = xa_load(&rac->mapping->i_pages, rac->_index);
+	VM_BUG_ON_PAGE(page && !PageLocked(page), page);
+	rac->_batch_count = page ? (1U << compound_order(page)) : 1;
+
+	return page;
+}
+
 #include <linux/folio.h>
+
+static inline struct folio *readahead_folio(struct readahead_control *rac)
+{
+	struct page *page = readahead_page(rac);
+
+	return page ? page_folio(page) : NULL;
+}
 
 #endif /* _LINUX_PAGEMAP_H */

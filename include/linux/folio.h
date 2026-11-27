@@ -30,6 +30,11 @@ static inline unsigned int folio_order(struct folio *folio)
 	return compound_order(&folio->page);
 }
 
+static inline unsigned int folio_nr_pages(struct folio *folio)
+{
+	return 1U << compound_order(&folio->page);
+}
+
 static inline pgoff_t folio_index(struct folio *folio)
 {
 	return folio->page.index;
@@ -93,6 +98,11 @@ static inline bool folio_test_locked(struct folio *folio)
 static inline bool folio_test_error(struct folio *folio)
 {
 	return PageError(&folio->page);
+}
+
+static inline bool folio_test_readahead(struct folio *folio)
+{
+	return PageReadahead(&folio->page);
 }
 
 static inline struct folio *read_cache_folio(struct address_space *mapping,
