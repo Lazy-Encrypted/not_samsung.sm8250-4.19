@@ -11,6 +11,16 @@
 	 FASYNC	| O_DIRECT | O_LARGEFILE | O_DIRECTORY | O_NOFOLLOW | \
 	 O_NOATIME | O_CLOEXEC | O_PATH | __O_TMPFILE)
 
+/* List of all valid flags for the how->resolve argument: */
+#define VALID_RESOLVE_FLAGS \
+	(RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | \
+	 RESOLVE_BENEATH | RESOLVE_IN_ROOT)
+
+/* List of all open_how.flags currently supported by O_PATH. */
+#define O_PATH_FLAGS		(O_DIRECTORY | O_NOFOLLOW | O_PATH | O_CLOEXEC)
+
+#define WILL_CREATE(flags)	((flags) & (O_CREAT | __O_TMPFILE))
+
 #ifndef force_o_largefile
 #define force_o_largefile() (BITS_PER_LONG != 32)
 #endif
